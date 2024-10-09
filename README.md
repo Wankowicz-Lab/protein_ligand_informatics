@@ -1,2 +1,2 @@
 # macrodomain_informatics
-This is all related information about macrodomain bioinformatics
+This is all projects related to Protein-Ligand Interactions and Relationships with Entropy.
