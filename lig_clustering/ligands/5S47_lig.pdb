@@ -1,0 +1,13 @@
+HETATM    1  CAB BAQ A 401      -3.989  15.336   1.411  0.80 22.17           C
+HETATM    2  CAC BAQ A 401      -3.464  15.202  -0.003  0.80 22.46           C
+HETATM    3  CAD BAQ A 401      -5.427  14.862   1.344  0.80 22.07           C
+HETATM    4  CAF BAQ A 401      -5.789  15.021  -0.096  0.80 22.27           C
+HETATM    5  NAE BAQ A 401      -4.676  15.136  -0.806  0.80 22.39           N
+HETATM    6  OAA BAQ A 401      -6.932  15.042  -0.558  0.80 22.28           O
+HETATM    7  CAB BAQ A 402      -1.503   8.339  -6.281  0.60 22.64           C
+HETATM    8  CAC BAQ A 402       0.002   8.348  -6.408  0.60 22.47           C
+HETATM    9  CAD BAQ A 402      -1.996   9.278  -7.351  0.60 22.59           C
+HETATM   10  CAF BAQ A 402      -0.846   9.383  -8.306  0.60 22.80           C
+HETATM   11  NAE BAQ A 402       0.216   8.806  -7.768  0.60 22.69           N
+HETATM   12  OAA BAQ A 402      -0.871   9.909  -9.413  0.60 23.47           O
+END
