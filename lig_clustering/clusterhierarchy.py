@@ -63,18 +63,20 @@ def compute_graph_features(G):
 
     features['num_nodes'] = G.number_of_nodes()
     features['num_edges'] = G.number_of_edges()
+
     degrees = [degree for node, degree in G.degree()]
     features['avg_degree'] = np.mean(degrees) if degrees else 0
-    try:
-        features['degree_assortativity'] = nx.degree_assortativity_coefficient(G)
-    except Exception:
-        features['degree_assortativity'] = 0
+
+    
+    features['degree_assortativity'] = nx.degree_assortativity_coefficient(G)
+
     features['avg_clustering'] = nx.average_clustering(G)
     features['transitivity'] = nx.transitivity(G)
-    if nx.is_connected(G):
+    if nx.is_connected(G): # graph can not be connected sometimes. maybe only 1 node?
         features['diameter'] = nx.diameter(G)
     else:
         features['diameter'] = 0
+
     laplacian = nx.normalized_laplacian_matrix(G).todense()
     eigenvalues = np.linalg.eigvals(laplacian)
     eigenvalues = np.sort(eigenvalues)
