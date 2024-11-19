@@ -1,4 +1,4 @@
-# TONNER CHECKING ISOMORPHISM
+# TONNAR CHECKING ISOMORPHISM
 # Result: Some graphs that were not physically the same returned to
 #   be isomorphic, indicating that our original graph creation scheme may be inadequate or missing something.
 
