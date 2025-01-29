@@ -6,7 +6,7 @@
 
 import torch
 import glob
-import tensormap as tm
+import ADJ_Matrix_Creation.keywordmap as tm
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 

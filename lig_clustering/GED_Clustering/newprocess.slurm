@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --mem=48G
+#SBATCH --mem=4G
 #SBATCH --cpus-per-task=1
 #SBATCH --time=120:00:00
 #SBATCH --account=wankowicz_lab
 #SBATCH --mail-user=ahmed.j.aslam@vanderbilt.edu
 #SBATCH --array=1-25200%500
-#SBATCH --output=out2/proc._%j_stdout
+#SBATCH --output=output/out2/proc._%j_stdout
 #SBATCH --job-name=lig_clustering_editdistance
 
 module load python/3.8

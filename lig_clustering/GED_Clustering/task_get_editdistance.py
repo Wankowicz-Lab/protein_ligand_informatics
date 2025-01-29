@@ -1,3 +1,5 @@
+# To be used in slurm array job -- performs a comparison and saves to file.
+
 import argparse
 import networkx as nx
 import pandas as pd
@@ -18,9 +20,9 @@ def load_nx_adj_mx_from_json(graph):
         G = nx.from_pandas_adjacency(df)
     return G
 
-def append_to_text_file(content):
-    with open("ged_task_output_2.txt", "a") as f:
-        f.write(content + "\n")
+def create_file(l1, l2, ged):
+    with open("./output/mainout/" + l1 + "_" + l2 + '.txt', "a") as f:
+        f.write(ged)
         f.close()
 
 if __name__ == "__main__":
@@ -34,5 +36,5 @@ if __name__ == "__main__":
         ged = 0
     graph_1 = graph_1.split("/")[-1]
     graph_2 = graph_2.split("/")[-1]
-    append_to_text_file( graph_1 + " " + graph_2 + " " + str(ged))
+    create_file( graph_1 , graph_2 , str(ged))
     print(graph_1, graph_2, ged)

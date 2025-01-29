@@ -1,13 +1,14 @@
-# Create ./built_adj_mxs/*
-# Uses alt locs
+# pytorch
+# C:\ProgramData\miniforge3\python.exe -m pip install torch
+
+# Graph that does NOT properly weigh alt locs. See createGraphAltLocs.py for that.
 
 
 import torch
 import glob
-import tensormap as tm
+import ADJ_Matrix_Creation.keywordmap as tm
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import networkx as nx
 
 
 ROOT_DIR = "./ligands"
@@ -105,13 +106,10 @@ def create_graph(protein_atoms, ligand_atoms):
                 hydrogen_bond = is_hydrogen_bond(atom1["atom_element"], atom2["atom_element"], distance)
                 pi_pi_interaction = is_pi_pi_interaction(atom1, atom2, distance)
 
-                weight = (float(atom1['occupancy']) + float(atom2['occupancy'])) / 2
-
                 edge_feature = [distance, bond_order, 
                                 covalent_bond and 1 or 0, 
                                 hydrogen_bond and 1 or 0,
-                                pi_pi_interaction and 1 or 0,
-                                weight]
+                                pi_pi_interaction and 1 or 0]
 
                 edges.append([i, j])
                 edges.append([j, i])
@@ -121,42 +119,6 @@ def create_graph(protein_atoms, ligand_atoms):
     edge_features = torch.tensor(edge_features)
     return edges, nodes, edge_features
 
-
-def make_nx_graph(nodes, edges, edge_features):
- 
-    if edges.dim() == 1:
-        num_edges = edges.numel() // 2
-        edges = edges.view(num_edges, 2)
-    elif edges.shape[0] == 2:
-        edges = edges.t()
-    else:
-        edges = edges
-
-    G = nx.Graph()
-    num_nodes = nodes.size(0)
-    if num_nodes == 0:
-        G.add_node(0)
-    else:
-        G.add_nodes_from(range(num_nodes))
-    
-    edge_list = edges.tolist()
-    G.add_edges_from(edge_list)
-    
-    node_features = nodes.numpy()
-    for i in range(num_nodes):
-        G.nodes[i]['feature'] = node_features[i]
-    
-    edge_features = edge_features.numpy()
-    for idx, (u, v) in enumerate(edge_list):
-        G.edges[u, v]['feature'] = edge_features[idx]
-    return G
-
-
-def save_adj_mx_to_json(adj, dsName):
-    adj = adj.todense()
-    adj = adj.tolist()
-    with open("./built_adj_mxs/lig_adj_" + dsName + ".json", "w") as f:
-        f.write(str(adj))
 
 if __name__ == "__main__":
     allLigFiles = get_files()
@@ -168,8 +130,5 @@ if __name__ == "__main__":
         print("protein atom count:", len(protein_atoms))
         print("ligand atom count:", len(ligand_atoms))
         edges, nodes, edge_features = create_graph(protein_atoms, ligand_atoms)
-        G = make_nx_graph(nodes, edges, edge_features)
-        adjacency_matrix = nx.adjacency_matrix(G)
-
-        save_adj_mx_to_json(adjacency_matrix, dataset_name)
-        print("Saved adj mx for", dataset_name)
+        torch.save([nodes, edges, edge_features], "./built_graphs/lig_graph_" + dataset_name + ".pt")
+        print("saved " + dataset_name)

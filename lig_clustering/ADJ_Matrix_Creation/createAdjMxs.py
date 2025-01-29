@@ -1,10 +1,11 @@
 # Create ./built_adj_mxs/*
 # Uses alt locs
 
+# Create adjacency matrices for all ligands
 
 import torch
 import glob
-import tensormap as tm
+import ADJ_Matrix_Creation.keywordmap as tm
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import networkx as nx
@@ -82,7 +83,7 @@ def is_pi_pi_interaction(atom1, atom2, distance):
 
 
 def create_graph(protein_atoms, ligand_atoms):
-    atoms = ligand_atoms # + protein_atoms
+    atoms = protein_atoms + ligand_atoms
     num_atoms = len(atoms)
     nodes = torch.tensor([[float(atom["x"]), float(atom["y"]), float(atom["z"]), 
                            tm.getElementForTensor(atom["atom_element"]), tm.getAtomForTensor(atom["atom_name"]), 
@@ -155,23 +156,15 @@ def make_nx_graph(nodes, edges, edge_features):
 def save_adj_mx_to_json(adj, dsName):
     adj = adj.todense()
     adj = adj.tolist()
-    with open("./built_225_largest_adj_mxs/lig_adj_" + dsName + ".json", "w") as f:
+    with open("./built_adj_mxs/lig_adj_" + dsName + ".json", "w") as f:
         f.write(str(adj))
-
-
-def sort_by_atom_count(files):
-    return sorted(files, key=lambda x: len(read_pdb(x)[2]), reverse=True)
 
 if __name__ == "__main__":
     allLigFiles = get_files()
-    allLigFiles = sort_by_atom_count(allLigFiles)
-    for idx, testFile in enumerate(allLigFiles):
-        if idx >= 225:
-            break
-
+    for testFile in allLigFiles:
         dataset_name, protein_atoms, ligand_atoms = read_pdb(testFile)
-        if (len(ligand_atoms) > 1000):
-            print("More than 1000 found in", testFile, ", skipping for now")
+        if (len(protein_atoms) > 100):
+            print("More than 100 found in", testFile, ", skipping for now")
             continue
         print("protein atom count:", len(protein_atoms))
         print("ligand atom count:", len(ligand_atoms))
@@ -180,4 +173,4 @@ if __name__ == "__main__":
         adjacency_matrix = nx.adjacency_matrix(G)
 
         save_adj_mx_to_json(adjacency_matrix, dataset_name)
-        print("Saved adj mx for", dataset_name, idx)
+        print("Saved adj mx for", dataset_name)
