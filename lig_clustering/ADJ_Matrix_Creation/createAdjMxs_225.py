@@ -16,6 +16,7 @@ ROOT_DIR = "./ligands"
 def get_files():
     return glob.glob(ROOT_DIR + "/*_lig.pdb")
 
+# parses a PDB line into an object
 def parse_pdb_line(pdbline):
     atom = pdbline[0:6].strip()
     atom_num = pdbline[6:11].strip()
@@ -44,6 +45,7 @@ def parse_pdb_line(pdbline):
         "b_factor": b_factor
     }
 
+# returns all protein atoms and ligand atoms in a PDB file 
 def read_pdb(file):
     dataset_name = file.split("/")[-1].split("_")[0].split('\\')[-1]
     with open(file, "r") as f:
@@ -85,6 +87,7 @@ def is_pi_pi_interaction(atom1, atom2, distance):
 def create_graph(protein_atoms, ligand_atoms):
     atoms = ligand_atoms # + protein_atoms
     num_atoms = len(atoms)
+    # node features of position, atom, residue, chain, and occupancy and b factor
     nodes = torch.tensor([[float(atom["x"]), float(atom["y"]), float(atom["z"]), 
                            tm.getElementForTensor(atom["atom_element"]), tm.getAtomForTensor(atom["atom_name"]), 
                            tm.getResidueForTensor(atom["residue_name"]), int(atom["residue_num"]), 
@@ -100,12 +103,14 @@ def create_graph(protein_atoms, ligand_atoms):
                 atom1 = atoms[i]
                 atom2 = atoms[j]
 
+                # edge features
 
                 bond_order = 1 # figure out bond order later
                 covalent_bond = is_covalent_bond(atom1["atom_element"], atom2["atom_element"], distance)
                 hydrogen_bond = is_hydrogen_bond(atom1["atom_element"], atom2["atom_element"], distance)
                 pi_pi_interaction = is_pi_pi_interaction(atom1, atom2, distance)
 
+                # weighs the atom based on the average between the two atoms' occupancies 
                 weight = (float(atom1['occupancy']) + float(atom2['occupancy'])) / 2
 
                 edge_feature = [distance, bond_order, 
@@ -123,8 +128,10 @@ def create_graph(protein_atoms, ligand_atoms):
     return edges, nodes, edge_features
 
 
+# turns the node and edges list into a network X graph
 def make_nx_graph(nodes, edges, edge_features):
- 
+
+    # ensure data is not inconsistent 
     if edges.dim() == 1:
         num_edges = edges.numel() // 2
         edges = edges.view(num_edges, 2)
@@ -142,6 +149,8 @@ def make_nx_graph(nodes, edges, edge_features):
     
     edge_list = edges.tolist()
     G.add_edges_from(edge_list)
+
+    # add features 
     
     node_features = nodes.numpy()
     for i in range(num_nodes):
@@ -169,7 +178,7 @@ if __name__ == "__main__":
     for idx, testFile in enumerate(allLigFiles):
         if idx >= 225:
             break
-
+        # for largest 225 ligands, make an NX graph and get the adjacency matrix and save it to file.
         dataset_name, protein_atoms, ligand_atoms = read_pdb(testFile)
         if (len(ligand_atoms) > 1000):
             print("More than 1000 found in", testFile, ", skipping for now")
