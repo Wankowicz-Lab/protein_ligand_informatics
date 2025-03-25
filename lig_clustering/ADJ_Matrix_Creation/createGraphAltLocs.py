@@ -16,6 +16,7 @@ ROOT_DIR = "./test"
 def get_files():
     return glob.glob(ROOT_DIR + "/*.pdb")
 
+# parses the PDB line entry into an object
 def parse_pdb_line(pdbline):
     atom = pdbline[0:6].strip()
     atom_num = pdbline[6:11].strip()
@@ -46,6 +47,7 @@ def parse_pdb_line(pdbline):
 
 def read_pdb(file):
     dataset_name = file.split("/")[-1].split("_")[0].split('\\')[-1]
+    # goes through all the lines in a PDB file and parses them into an array
     with open(file, "r") as f:
         lines = f.readlines()
         protein_atoms = []
@@ -65,6 +67,7 @@ def read_pdb(file):
 # =========== INTERACTIONS ============
 
 def is_hydrogen_bond(atomElement1, atomElement2, distance):
+    # returns True/False if an atom and another atom are hydrogen bonded
     bondable = ["H", "O", "N", "F"]
     if atomElement1 in bondable and atomElement2 in bondable:
         if distance <= 3.2 and distance >= 2.5:
@@ -72,10 +75,12 @@ def is_hydrogen_bond(atomElement1, atomElement2, distance):
     return False
 
 def is_covalent_bond(atomElement1, atomElement2, distance):
+    # returns True if an atom is covalently bonded to another atom
     if distance <= 1.8: # TODO use table for covalent bonds
         return True
 
 def is_pi_pi_interaction(atom1, atom2, distance):
+    # returns True if an atom is experiencing a Pi-Pi interaction with another
     aromatic_atoms = {'C', 'N'}
     return (atom1["atom_element"] in aromatic_atoms and atom2["atom_element"] in aromatic_atoms and
             distance < 5.0 and distance > 3.0)
@@ -85,6 +90,7 @@ def is_pi_pi_interaction(atom1, atom2, distance):
 def create_graph(protein_atoms, ligand_atoms):
     atoms = protein_atoms + ligand_atoms
     num_atoms = len(atoms)
+    # Node and node features of position, element, residue, chain, and dynamics such as occupancy and b factor
     nodes = torch.tensor([[float(atom["x"]), float(atom["y"]), float(atom["z"]), 
                            tm.getElementForTensor(atom["atom_element"]), tm.getAtomForTensor(atom["atom_name"]), 
                            tm.getResidueForTensor(atom["residue_name"]), int(atom["residue_num"]), 
@@ -96,12 +102,14 @@ def create_graph(protein_atoms, ligand_atoms):
     for i in range(num_atoms):
         for j in range(i + 1, num_atoms):
             distance = ((nodes[i][:3] - nodes[j][:3]) ** 2).sum().sqrt().item()
+            # loops every atom to every other atom, and forms edges among them if they are within 5 A
             if distance < 5.0:
                 atom1 = atoms[i]
                 atom2 = atoms[j]
 
 
                 bond_order = 1 # figure out bond order later
+                # edge features
                 covalent_bond = is_covalent_bond(atom1["atom_element"], atom2["atom_element"], distance)
                 hydrogen_bond = is_hydrogen_bond(atom1["atom_element"], atom2["atom_element"], distance)
                 pi_pi_interaction = is_pi_pi_interaction(atom1, atom2, distance)
