@@ -1,0 +1,27 @@
+source leaprc.protein.ff19SB    # Load protein force field
+source leaprc.gaff2             # Load ligand force field
+source leaprc.water.opc         # Load OPC water model
+loadoff atomic_ions.lib
+loadamberparams frcmod.ionslm_126_opc
+
+# Load the protein
+PROT = loadpdb x3479_chainA_protein_clean.pdb
+
+# Load the ligand
+LIG = loadmol2 ligand.mol2
+loadamberparams ligand.frcmod
+
+# Combine protein and ligand into one system
+COMPLEX = combine {PROT LIG}
+
+# Solvate the complex
+solvateoct COMPLEX OPCBOX 9
+addions COMPLEX Na+ 0
+addions COMPLEX Cl- 0
+
+# Save the topology and coordinates
+saveamberparm COMPLEX complex.prmtop complex.inpcrd
+savepdb COMPLEX complex.pdb
+quit
+
+
