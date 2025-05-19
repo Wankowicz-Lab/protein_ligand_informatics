@@ -88,9 +88,9 @@ def gather_rfree_values(input_csv, base_path, intermediate_csv, final_csv, log_f
             if not values:
                 writer.writerow([uniprot_id, '', ''])
                 continue
-            max_rfree = max(values, key=lambda x: x[1])[1]
-            best_pdbs = [pdb_id for pdb_id, rfree in values if rfree == max_rfree]
-            writer.writerow([uniprot_id, ', '.join(best_pdbs), max_rfree])
+            min_rfree = min(values, key=lambda x: x[1])[1]
+            best_pdbs = [pdb_id for pdb_id, rfree in values if rfree == min_rfree]
+            writer.writerow([uniprot_id, ', '.join(best_pdbs), min_rfree])
 
     # Step 5: Log missing files and errors
     with open(log_file, mode='w') as logfile:
