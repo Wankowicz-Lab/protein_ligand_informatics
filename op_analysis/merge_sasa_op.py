@@ -1,9 +1,9 @@
 import csv
 
 # File paths
-file1_path = "/dors/wankowicz_lab/ellas/apo_op/close_resi_filtered/binding_combined.csv"
-file2_path = "/dors/wankowicz_lab/ellas/apo_sasa/combined_solvent_data.csv"
-output_path = "/dors/wankowicz_lab/ellas/apo_sasa/sasa_op_merged_binding.csv"
+file1_path = "/.../binding_combined.csv"
+file2_path = "/.../combined_solvent_data.csv"
+output_path = "/.../sasa_op_merged_binding.csv"
 
 # Load SASA data using (chain, resi) as key
 file2_data = {}
