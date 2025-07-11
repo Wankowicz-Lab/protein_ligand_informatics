@@ -99,9 +99,9 @@ def gather_rfree_values(input_csv, base_path, intermediate_csv, final_csv, log_f
 
 
 if __name__ == '__main__':
-    input_csv = "/dors/wankowicz_lab/ellas/uniprot_summary.csv"
+    input_csv = "/.../uniprot_summary.csv"
     base_path = "/dors/wankowicz_lab/all_pdb/"
-    intermediate_csv = "/dors/wankowicz_lab/ellas/apo_uniprot_Intermediate.csv"
-    final_csv = "/dors/wankowicz_lab/ellas/apo_uniprot_bestrfree_pdbs.csv"
-    log_file = "/dors/wankowicz_lab/ellas/apo_uniprot_rfree_log.txt"
+    intermediate_csv = "/.../apo_uniprot_tmp.csv"
+    final_csv = "/.../apo_uniprot_bestrfree_pdbs.csv"
+    log_file = "/.../apo_uniprot_rfree_log.txt"
     gather_rfree_values(input_csv, base_path, intermediate_csv, final_csv, log_file)
