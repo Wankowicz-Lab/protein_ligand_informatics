@@ -4,9 +4,9 @@ from scipy.stats import mannwhitneyu
 import matplotlib.pyplot as plt
 
 # === Paths ===
-all_path = "/dors/wankowicz_lab/ellas/apo_op/all_op_combined.csv"
-binding_path = "/dors/wankowicz_lab/ellas/apo_op/close_resi_filtered/binding_combined.csv"
-nonbinding_output = "/dors/wankowicz_lab/ellas/apo_op/close_resi_filtered/nonbinding_combined.csv"
+all_path = "/.../all_op_combined.csv"
+binding_path = "/.../binding_combined.csv"
+nonbinding_output = "/.../nonbinding_combined.csv"
 
 # === Load data ===
 df_all = pd.read_csv(all_path)
@@ -48,5 +48,5 @@ plt.title("s2calc: Non-binding vs Binding")
 plt.ylabel("s2calc")
 plt.grid(True, linestyle='--', alpha=0.3)
 plt.tight_layout()
-plt.savefig("/dors/wankowicz_lab/ellas/apo_op/close_resi_filtered/nonbinding_vs_binding_boxplot.png", dpi=300)
+plt.savefig("/.../nonbinding_vs_binding_boxplot.png", dpi=300)
 plt.show()
