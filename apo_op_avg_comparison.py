@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import os
 
 # File paths
-all_path = "/dors/wankowicz_lab/ellas/apo_op/all_op_combined.csv"
-binding_path = "/dors/wankowicz_lab/ellas/apo_op/close_resi_filtered/binding_combined.csv"
+all_path = "/.../all_op_combined.csv"
+binding_path = "/...//binding_combined.csv"
 
 # Load data
 df_all = pd.read_csv(all_path)
@@ -45,7 +45,7 @@ plt.title("Boxplot of s2calc")
 plt.ylabel("s2calc")
 plt.grid(True, linestyle='--', alpha=0.3)
 plt.tight_layout()
-plt.savefig("/dors/wankowicz_lab/ellas/apo_op/close_resi_filtered/s2calc_boxplot.png", dpi=300)
+plt.savefig("/.../s2calc_boxplot.png", dpi=300)
 plt.show()
 
 # Histogram of delta (optional, just to visualize the shift)
@@ -58,5 +58,5 @@ plt.ylabel("Frequency")
 plt.legend()
 plt.grid(True, linestyle='--', alpha=0.3)
 plt.tight_layout()
-plt.savefig("/dors/wankowicz_lab/ellas/apo_op/close_resi_filtered/s2calc_histogram.png", dpi=300)
+plt.savefig("/.../s2calc_histogram.png", dpi=300)
 plt.show()
