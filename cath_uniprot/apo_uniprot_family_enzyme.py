@@ -4,7 +4,7 @@ import json
 import os
 
 # Input and output file paths
-input_csv = "/dors/wankowicz_lab/ellas/apo_pdb_uniprot_mapping.csv"
+input_csv = "/.../apo_pdb_uniprot_mapping.csv"
 output_csv = "apo_merged_uniprot_data.csv"
 log_file = "apo_merged_uniprot_data_log.txt"
 
