@@ -5,14 +5,14 @@ from Bio.SeqUtils import seq1
 from pathlib import Path
 
 # === Inputs ===
-binding_site_csv = "/dors/wankowicz_lab/ellas/main_dataset/all_binding_residues.csv"
-pdb_list_path = "/dors/wankowicz_lab/ellas/main_dataset/updated_main_dataset.txt"
+binding_site_csv = "/.../all_binding_residues.csv"
+pdb_list_path = "/.../updated_main_dataset.txt"
 base_path = "/dors/wankowicz_lab/all_pdb"
 pdb_root_dirs = [
     "1_10000", "10001_20000", "20001_30000", "30001_40000",
     "40001_50000", "50001_60000", "60001_70000", "70001_80000", "80001_end"
 ]
-output_fasta = "/dors/wankowicz_lab/ellas/main_dataset/binding_site_seqs.fasta"
+output_fasta = "/.../binding_site_seqs.fasta"
 
 # === Load binding site info ===
 df = pd.read_csv(binding_site_csv, dtype=str, low_memory=False)
