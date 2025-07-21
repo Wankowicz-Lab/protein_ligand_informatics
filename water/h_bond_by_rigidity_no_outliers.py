@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # === Load CSVs ===
-bonds_df = pd.read_csv("/dors/wankowicz_lab/ellas/main_dataset/water_bond_clash_summary.csv")
-rigidity_df = pd.read_csv("/dors/wankowicz_lab/ellas/main_dataset/updated_main_dataset_avg_op_per_pdb.csv")
+bonds_df = pd.read_csv("/.../water_bond_clash_summary.csv")
+rigidity_df = pd.read_csv("/.../updated_main_dataset_avg_op_per_pdb.csv")
 
 # === Prepare and merge ===
 bonds_df['pdb'] = bonds_df['pdb'].astype(str).str.upper()
