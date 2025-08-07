@@ -1,12 +1,15 @@
 """
 Takes a PDB file with protein and water coordinates.
 Creates a graph with vertices of water/AA residues and edges if they have an H bond.
+Committed on github under protein_ligand_informatics/water/water_protein_Hbond_network.py
+
 """
 
 from Bio import PDB
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import pandas as pd
 import networkx as nx
 
@@ -17,6 +20,7 @@ import pathlib
 AA=['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE', 
     'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER', 'THR', 'TRP', 'TYR', 'VAL']
 WATER=['HOH', 'WAT', 'H2O']  
+
 HBOND_MAX_DIST=3.5
 HBOND_MIN_DIST=2.4
 
@@ -25,6 +29,9 @@ HBOND_MIN_DIST=2.4
 DEFAULT_DONOR_ATOMS = ['N', 'ND1','ND2', 'NE', 'NE1', 'NE2', 'NH1', 'NH2', 'NZ', 'OG', 'OG1', 'OH', 'SG']
 DEFAULT_ACCEPTOR_ATOMS = ['ND1', 'NE2', 'O', 'OD1', 'OD2', 'OE1', 'OE2', 'OG', 'OG1', 'OH', 'SD', 'SG']
 
+"""
+Data loading
+"""
 def get_filtered_atoms(pdb_structure, residue_target=None, atom_target=None):
     """
     residue_target [optional] and atom_target [optional] are lists of acceptable values
@@ -54,6 +61,9 @@ def get_coordinates_from_atoms(atoms):
     """
     return np.array( [atom.get_coord() for atom in atoms] )
 
+"""
+Graph construction
+"""
 def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms):
     """
     Takes in coordinates for water, H-bond donors, and H-bond acceptors.
@@ -70,11 +80,11 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms):
     
     # Add nodes to the graph with position as a node attribute
     for idx, coord in enumerate(water_coordinates):
-        Hbond_graph.add_node(f"w{idx}", pos=coord[:2], res="water")
+        Hbond_graph.add_node(f"w{idx}", pos=coord, res="water")
     for idx, coord in enumerate(donor_coordinates):
-        Hbond_graph.add_node(f"d{idx}", pos=coord[:2], res="donor")
+        Hbond_graph.add_node(f"d{idx}", pos=coord, res="donor")
     for idx, coord in enumerate(acceptor_coordinates):
-        Hbond_graph.add_node(f"a{idx}", pos=coord[:2], res="acceptor")
+        Hbond_graph.add_node(f"a{idx}", pos=coord, res="acceptor")
 
     # Add H-bond edges 
     for idx, coord in enumerate(water_coordinates): 
@@ -114,15 +124,94 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms):
         
     return Hbond_graph
     
+"""
+Graph analysis
+"""
+def average_degree(G):
+    """ 
+    Takes a graph.
+    Returns a float.
+    """
+    return len(G.edges()) / ( 2 * len(G.nodes()) )
     
+    
+def degree_distribution(G):
+    """
+    Takes a graph.
+    Returns a tuple of ndarrays. The first contains the degree values and the second the corresponding proportion of nodes with that degree.
+    """
+    degree_sequence = [d for n, d in G.degree()]
+    degree, counts = np.unique(degree_sequence, return_counts=True)
+    counts_proportion = counts/np.sum(counts)
+    return degree, counts_proportion
+    
+def bond_proportion_by_type(Hbond_graph):
+    """
+    Takes an H-bond graph.
+    Outputs a 3-tuple of the proportion of water-water, water-donor/acceptor, and donor-acceptor H bonds.
+    """
+    ww = 0
+    wd = 0
+    da = 0
+    for u, v in Hbond_graph.edges():
+        if Hbond_graph.nodes()[u]["res"] == "water" and Hbond_graph.nodes()[v]["res"] == "water":
+            ww += 1
+        elif Hbond_graph.nodes()[u]["res"] == "water" or Hbond_graph.nodes()[v]["res"] == "water":
+            wd += 1
+        else:
+            da += 1
+            
+    total_bonds = len( Hbond_graph.edges() )
+    return ww/total_bonds, wd/total_bonds, da/total_bonds
+
+def get_graph_metrics(G_list, names_list):
+    """
+    Takes a list of graphs and the associated protein names.
+    Outputs a dataframe with metrics.
+    """
+    df = pd.DataFrame(index=names_list, columns = ["Average degree", "Degree distribution", "Bond proportion by type"])
+    for graph, prot in zip(G_list, names_list):
+        df.at[prot, "Degree distribution"] = [degree_distribution(graph)]
+        df.loc[prot, "Average degree"] = average_degree(graph)
+        df.at[prot, "Bond proportion by type"] = bond_proportion_by_type(graph)
+
+    return df
+
+
+"""
+Visualization
+"""
+# utility function to get colors from graph
+def get_colors(Hbond_graph):
+    type_to_color = {"water": "blue", "donor": "red", "acceptor":"tomato"}
+    node_colors = [ type_to_color.get(nx.get_node_attributes(Hbond_graph, "res")[n], "gray")
+        for n in Hbond_graph.nodes() ]
+    edge_colors = [Hbond_graph[u][v]["color"] for u, v in Hbond_graph.edges()]
+    return node_colors, edge_colors
+
 # Set the characteristics of the graph and draw projected onto XY plane
 def draw_graph(Hbond_graph, ax):
     pos = nx.get_node_attributes(Hbond_graph, 'pos')
-    type_to_color = {"water": "blue", "donor": "red", "acceptor":"tomato"}
-    node_colors = [type_to_color.get(nx.get_node_attributes(Hbond_graph, 'res')[n], "gray") for n in Hbond_graph.nodes()]
-    edge_colors = [Hbond_graph[u][v]["color"] for u, v in Hbond_graph.edges()]
-
+    node_colors, edge_colors = get_colors(Hbond_graph)
     nx.draw(Hbond_graph, pos, ax=ax, node_color=node_colors, edge_color=edge_colors, node_size=3)
+
+def draw_graph_3d(Hbond_graph, ax):
+    """
+    Plotting function for 3D graph. ax must be with a 3-D projection.
+    """
+    pos = nx.get_node_attributes(Hbond_graph, 'pos')
+    node_colors, edge_colors = get_colors(Hbond_graph)
+    
+    # Plot nodes
+    # List comprehension gives a list of (x,y,z) coordinates and zip(*([])) transposes them to the format for matplotlib
+    xs, ys, zs = zip( *[pos[node] for node in Hbond_graph.nodes()] ) 
+    ax.scatter(xs, ys, zs, s=5, c=node_colors)
+
+    # Plot edges
+    for idx, (u,v) in enumerate(Hbond_graph.edges()):
+        x, y, z = zip(pos[u],pos[v])
+        ax.plot(x, y, z, color=edge_colors[idx])
+
 
 
 """ 
@@ -135,8 +224,6 @@ pdb_path = pathlib.Path(data_folder)
 pdb_files = list(pdb_path.glob('*_final.pdb')) 
 parser = PDB.PDBParser(QUIET=True)
 
-apo_id = '1PW2'
-holo_id = '1PXI'
 df_atoms = pd.DataFrame(columns = ["Backbone", "Water", "H-bond donors", "H-bond acceptors"])
 for file_name in pdb_files:
     prot = file_name.stem.split('_')[0]
@@ -150,23 +237,43 @@ for file_name in pdb_files:
 Display hydrogen bonding network as a graph.
 """
 
-apo_Hbond_graph = graph_from_atom_sets(df_atoms.loc[apo_id, "Water"], df_atoms.loc[apo_id, "H-bond donors"], df_atoms.loc[apo_id, "H-bond acceptors"])
-holo_Hbond_graph = graph_from_atom_sets(df_atoms.loc[holo_id, "Water"], df_atoms.loc[holo_id, "H-bond donors"], df_atoms.loc[holo_id, "H-bond acceptors"])
+Hbond_graphs = []
+for prot in df_atoms.index:
+    graph = graph_from_atom_sets(df_atoms.loc[prot, "Water"], df_atoms.loc[prot, "H-bond donors"], df_atoms.loc[prot, "H-bond acceptors"])
+    Hbond_graphs.append(graph)
+    
+df_metrics = get_graph_metrics(Hbond_graphs, df_atoms.index)
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24,12))
+fig  = plt.figure( figsize=(14, 6) )
+ax1 = fig.add_subplot(121, projection='3d')
+ax2 = fig.add_subplot(122, projection='3d')
 
 #plot graphs
-draw_graph(apo_Hbond_graph, ax1)
-draw_graph(holo_Hbond_graph, ax2)
+draw_graph_3d(Hbond_graphs[0], ax1)
+draw_graph_3d(Hbond_graphs[1], ax2)
 
 #plot protein backbones as one chain
-apo_coordinates = get_coordinates_from_atoms(df_atoms.loc[apo_id, "Backbone"])
-ax1.plot(apo_coordinates[:,0], apo_coordinates[:,1], color="green", alpha=0.2)
+apo_coordinates = get_coordinates_from_atoms(df_atoms.iloc[0]["Backbone"])
+ax1.plot(apo_coordinates[:,0], apo_coordinates[:,1], apo_coordinates[:,2], color="green", alpha=0.2)
 ax1.set_title("apo")
 
-holo_coordinates = get_coordinates_from_atoms(df_atoms.loc[holo_id, "Backbone"])
-ax2.plot(holo_coordinates[:,0], holo_coordinates[:,1], color="green", alpha=0.2)
+holo_coordinates = get_coordinates_from_atoms(df_atoms.iloc[1]["Backbone"])
+ax2.plot(holo_coordinates[:,0], holo_coordinates[:,1], holo_coordinates[:,2], color="green", alpha=0.2)
 ax2.set_title("holo")
 
-plt.savefig("../Figures/H_bond_graph_test.png", dpi=144)
+# make a legend for the plot
+legend_elements = [
+    Line2D([0], [0], marker='o', color='w', label='Water', markerfacecolor='blue', markersize=10),
+    Line2D([0], [0], marker='o', color='w', label='Donor', markerfacecolor='red', markersize=10),
+    Line2D([0], [0], marker='o', color='w', label='Acceptor', markerfacecolor='tomato', markersize=10),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='black', label='Water to Water H-bond'),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='violet', label='Water to Donor/Acceptor H-bond'),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='darkgreen', label='Donor to Acceptor H-bond'),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='green', label='Protein backbone', alpha=0.2)
+]
+
+ax2.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), title="Graph elements")
+plt.tight_layout()
+
+# plt.savefig("../Figures/H_bond_graph_test.png", dpi=144)
 plt.show()
