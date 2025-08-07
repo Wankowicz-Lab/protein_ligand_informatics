@@ -17,6 +17,8 @@ from matplotlib.collections import LineCollection
 
 import glob
 import pathlib
+import sys
+
 
 # CONSTANTS
 AA=['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE', 
@@ -56,15 +58,28 @@ def get_filtered_atoms(pdb_structure, residue_target=None, atom_target=None):
                 atoms += new_atoms
                 
     return atoms
+    
+# TODO create a transformation by setting first Ca to origin and second Ca to (x, 0, 0) and third to (x, y, 0)
+# or just align them
 
-def get_coordinates_from_atoms(atoms):
-    """
-    Returns the coordinates of a list of N atoms in an N x 3 ndarray
-    """
-    return np.array( [atom.get_coord() for atom in atoms] )
 
+def get_coordinates_from_atoms(atoms, translation=None, rotation=None):
+    """
+    Returns the coordinates of a list of N atoms in an N x 3 ndarray under a transformation.
+    """
+    if not translation:
+        translation = 0
+    if not rotation:
+        rotation = np.eye(3)
+        
+    coordinates = np.array( [atom.get_coord() for atom in atoms] )
+    coordinates -= translation
+    coordinates = np.matmul(coordinates, rotation)
+    return coordinates
+    
 """
-Graph construction
+Graph construction.
+Consider using C-Graphs or Bridge2 package to ensure correctness?
 """
 def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, intramolecular_only=False):
     """
@@ -131,20 +146,23 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, intramolecula
 """
 Graph analysis
 """
-def average_degree(G):
+def average_degree_water(Hbond_graph):
     """ 
     Takes a graph.
     Returns a float.
     """
-    return len(G.edges()) / ( 2 * len(G.nodes()) )
+    residue_dict = nx.get_node_attributes(Hbond_graph, 'res')
+    degree_sequence = [d for n, d in Hbond_graph.degree() if residue_dict[n] == 'water']
+    return np.mean(degree_sequence)
     
     
-def degree_distribution(G):
+def degree_distribution_water(Hbond_graph):
     """
     Takes a graph.
     Returns a tuple of ndarrays. The first contains the degree values and the second the corresponding proportion of nodes with that degree.
     """
-    degree_sequence = [d for n, d in G.degree()]
+    residue_dict = nx.get_node_attributes(Hbond_graph, 'res')
+    degree_sequence = [d for n, d in Hbond_graph.degree() if residue_dict[n] == 'water']
     degree, counts = np.unique(degree_sequence, return_counts=True)
     counts_proportion = counts/np.sum(counts)
     return degree, counts_proportion
@@ -153,6 +171,7 @@ def bond_proportion_by_type(Hbond_graph):
     """
     Takes an H-bond graph.
     Outputs a 3-tuple of the proportion of water-water, water-donor/acceptor, and donor-acceptor H bonds.
+    TODO is this a normalized measure? ww scales quadratically with number of waters, wp linearly, and pp is constant
     """
     bond_type_list = list( nx.get_edge_attributes(Hbond_graph, "bond_type").values() )
     total_bonds = len( bond_type_list )
@@ -167,15 +186,17 @@ def get_Hbond_graph_metrics(G_dict):
     Takes a dict of graphs with (protein name, Hbond_graph) as key, value pairs.
     Outputs a dataframe with metrics.
     """
-    metrics = ["Average degree", "Degree distribution", "Bond proportion by type"]
+    metrics = ["Average degree water", "Degree distribution water", "Bond proportion by type"]
     df = pd.DataFrame(index = G_dict.keys(), columns = metrics)
     for prot, graph in G_dict.items():
-        df.at[prot, "Degree distribution"] = [degree_distribution(graph)]
-        df.loc[prot, "Average degree"] = average_degree(graph)
+        df.loc[prot, "Average degree water"] = average_degree_water(graph)
+        df.at[prot, "Degree distribution water"] = [degree_distribution_water(graph)]
         df.at[prot, "Bond proportion by type"] = bond_proportion_by_type(graph)
 
     return df
 
+
+# TODO graph intersection / difference
 
 """
 Visualization
@@ -233,16 +254,35 @@ for file_name in pdb_files:
     Hbond_acceptors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_ACCEPTOR_ATOMS)
     graph = graph_from_atom_sets(water, Hbond_donors, Hbond_acceptors, intramolecular_only=False)
     Hbond_graphs[prot] = graph
-    
+
+apo_ecent = nx.eigenvector_centrality(Hbond_graphs['1PW2'], max_iter=1000)
+holo_ecent = nx.eigenvector_centrality(Hbond_graphs['1PXI'], max_iter=1000)
+plt.plot(np.sort( list(apo_ecent.values()) ), "o", label="apo")
+plt.plot(np.sort( list(holo_ecent.values()) ), "o", label="holo")
+plt.legend()
+plt.show()
+
+
 """
 Get graph metrics.
 """
+
+"""
 df_metrics = get_Hbond_graph_metrics(Hbond_graphs)
+fig, ax = plt.subplots(3, 7, figsize = (12, 14), sharex=True, sharey=True)
+for idx, prot in enumerate(Hbond_graphs):
+    row, col = idx//7, idx%7
+    ax[row,col].bar(*df_metrics.loc[prot, 'Degree distribution water'][0])
+    ax[row,col].set_title(prot)
+    
+plt.show()
+"""
 
 """
 Display hydrogen bonding network for the apo and one holo protein.
 """
 
+"""
 fig  = plt.figure( figsize=(14, 6) )
 ax1 = fig.add_subplot(121, projection='3d')
 ax2 = fig.add_subplot(122, projection='3d')
@@ -289,3 +329,4 @@ ax2.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), 
 plt.tight_layout()
 
 plt.show()
+"""
