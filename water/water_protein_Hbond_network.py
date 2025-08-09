@@ -71,8 +71,9 @@ def get_filtered_atoms(pdb_structure, residue_target=None, atom_target=None):
                 atoms += new_atoms
                 
     return atoms
+
+
     
-# TODO align them
 def mean_center(data):
     data -= data.mean(axis=0)
     return data
@@ -264,12 +265,7 @@ def draw_graph_3d(Hbond_graph, ax):
     return legend_elements
 
 
-def plot_backbone(prot, ax, ss_positions):
-    file_name = f"{DATA_FOLDER}/{prot}_final.pdb"
-    structure = parser.get_structure(prot, file_name)
-    backbone = get_filtered_atoms(structure, residue_target = AA, atom_target = ["CA"])
-    coordinates = get_coordinates_from_atoms(backbone)
-    
+def plot_backbone(coordinates, ax, ss_positions): 
     # split color based on secondary structure
     last_colored = -1
     for (start, end) in ss_positions:
@@ -318,39 +314,42 @@ parser = PDB.PDBParser(QUIET=True)
 
 apo_id = '1PW2'
 Hbond_graphs = {}
+backbone_coordinates = {}
 for idx, file_name in enumerate(pdb_files):
     prot = file_name.stem.split('_')[0]
     structure = parser.get_structure(prot, file_name)
-    all_atoms = get_filtered_atoms(structure, residue_target = AA, atom_target = None)
-    all_coordinates = get_coordinates_from_atoms(all_atoms, rotation=None)
-    rotation = None
-    # TODO figure out how to handle different number of atoms
-    # if idx == 0:
-        # align_template = all_coordinates
-        # rotation = Rotation.identity()
-    # else:
-        # num_atoms = min(len(align_template), len(all_coordinates)) # NOT THIS
-        # rotation, _ = Rotation.align_vectors(align_template[:num_atoms], all_coordinates[:num_atoms])
+    backbone = get_filtered_atoms(structure, residue_target = AA, atom_target = ["CA"])
+    
+    # align on alpha carbon atoms
+    if idx == 0:
+        align_backbone = backbone.copy()
+        align_template = get_coordinates_from_atoms(align_backbone, rotation=None)
+        rotation = Rotation.identity()
+    else:
+        coordinates = get_coordinates_from_atoms(backbone, rotation=None)
+        rotation, _ = Rotation.align_vectors(align_template, coordinates)
        
     water = get_filtered_atoms(structure, residue_target = WATER, atom_target = ["O"])
     Hbond_donors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_DONOR_ATOMS)
     Hbond_acceptors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_ACCEPTOR_ATOMS)
     graph = graph_from_atom_sets(water, Hbond_donors, Hbond_acceptors, rotation=rotation, intramolecular_only=False)
+    
     Hbond_graphs[prot] = graph
+    backbone_coordinates[prot] = get_coordinates_from_atoms(backbone, rotation=rotation)
 
 """
 Get graph metrics.
 """
-df_metrics = get_graph_centrality_metrics(Hbond_graphs)
-plot_metric_all_proteins(df_metrics["Eigenvalue Centrality"], "Eigenvalue Centrality")
-plot_metric_all_proteins(df_metrics["Degree Centrality"], "Degree Centrality")
-plot_metric_all_proteins(df_metrics["Betweenness Centrality", "Betweenness Centrality"])
+# df_metrics = get_graph_centrality_metrics(Hbond_graphs)
+# plot_metric_all_proteins(df_metrics["Eigenvalue Centrality"], "Eigenvalue Centrality")
+# plot_metric_all_proteins(df_metrics["Degree Centrality"], "Degree Centrality")
+# plot_metric_all_proteins(df_metrics["Betweenness Centrality", "Betweenness Centrality"])
 
 
 """
 Display hydrogen bonding network for the apo and one holo protein.
 """
-# prots = ['1PW2', '3QQL'] # apo, holo
+# prots = ['1PW2', '3QZH'] # apo, holo
 # num_prots = len(prots)
 # fig  = plt.figure( figsize=(num_prots * 7, 6) )
 # axs = [ fig.add_subplot(1, num_prots, i+1, projection='3d') for i in range(num_prots) ]
@@ -358,7 +357,7 @@ Display hydrogen bonding network for the apo and one holo protein.
     # ax.set_title(f"{prot}")  
     # legend_elements = []
     # legend_elements += draw_graph_3d(Hbond_graphs[prot], ax) # plot graph        
-    # legend_elements += plot_backbone(prot, ax, SS_POSITIONS) # plot backbone
+    # legend_elements += plot_backbone(backbone_coordinates[prot], ax, SS_POSITIONS) # plot backbone
 
 # axs[-1].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), title="Graph elements")
 # plt.tight_layout()
