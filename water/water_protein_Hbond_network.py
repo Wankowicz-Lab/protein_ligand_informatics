@@ -10,11 +10,14 @@ from Bio import PDB
 import numpy as np
 import pandas as pd
 import networkx as nx
+from scipy.spatial.transform import Rotation
+from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
+from sklearn.decomposition import PCA
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
-from scipy.spatial.transform import Rotation
 
 import glob
 import pathlib
@@ -73,12 +76,6 @@ def get_filtered_atoms(pdb_structure, residue_target=None, atom_target=None):
     return atoms
 
 
-    
-def mean_center(data):
-    data -= data.mean(axis=0)
-    return data
-
-
 def get_coordinates_from_atoms(atoms, rotation=None):
     """
     Returns the coordinates of a list of N atoms in an N x 3 ndarray under a transformation.
@@ -87,7 +84,7 @@ def get_coordinates_from_atoms(atoms, rotation=None):
         rotation = Rotation.identity()
         
     coordinates = np.array( [atom.get_coord() for atom in atoms] )
-    coordinates = mean_center(coordinates)
+    coordinates -= coordinates.mean(axis=0)
     coordinates = rotation.apply(coordinates)
     
     return coordinates
@@ -101,7 +98,6 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, rotation=None
     """
     Takes in coordinates for water, H-bond donors, and H-bond acceptors.
     Outputs a graph with all H bonds between waters and from water to donors or acceptors.
-    TODO between donor and acceptor in the protein? would represent secondary structure 
     """
     # Create an empty graph
     Hbond_graph = nx.Graph()
@@ -172,8 +168,39 @@ def get_water_nodes(Hbond_graph):
     residue_dict = nx.get_node_attributes(Hbond_graph, 'res')
     water_nodes = [n for n in Hbond_graph.nodes() if residue_dict[n] == 'water']
     return water_nodes
-       
-       
+      
+      
+def get_protein_nodes(Hbond_graph):
+    """ 
+    Takes an H-bond graph.
+    Returns a list of node names for water residues.
+    """
+    residue_dict = nx.get_node_attributes(Hbond_graph, 'res')
+    protein_nodes = [n for n in Hbond_graph.nodes() if residue_dict[n] != 'water']
+    return protein_nodes
+      
+
+def map_nodes(graph_ref, node_list_ref, graph_align, node_list_align, distance_cutoff=HBOND_MAX_DIST):
+    """
+    Maps nodes in node_list_align from graph_align to nodes in node_list_ref from graph_ref
+    """
+    ref_coordinates = np.vstack( [graph_ref.nodes()[n]['pos'] for n in node_list_ref] )
+    align_coordinates = np.vstack( [graph_align.nodes()[n]['pos'] for n in node_list_align] )
+    
+    # calculate the square distance between two sets of nodes as an proxy for Gaussian MLE mapping between nodes
+    distance_matrix = cdist(ref_coordinates, align_coordinates, metric='sqeuclidean')
+    ref_nodes_idx, align_nodes_idx = linear_sum_assignment(distance_matrix)
+    
+    # keep assignments within a cutoff distance
+    keep = np.where( distance_matrix[ref_nodes_idx, align_nodes_idx] < distance_cutoff**2 ) 
+    ref_nodes_idx, align_nodes_idx = ref_nodes_idx[keep], align_nodes_idx[keep]
+
+    node_list_ref = [ node_list_ref[i] for i in ref_nodes_idx ]
+    node_list_align = [ node_list_align[i] for i in align_nodes_idx ]
+    
+    return node_list_ref, node_list_align
+
+    
 def bond_proportion_by_type(Hbond_graph):
     """
     Takes an H-bond graph.
@@ -192,7 +219,7 @@ def bond_proportion_by_type(Hbond_graph):
 def get_graph_centrality_metrics(Hbond_graph_dict):
     """
     Takes a dict of graphs with (protein name, Hbond_graph) as key, value pairs.
-    Outputs a dataframe with metrics of the water.
+    Outputs a dataframe with centrality metrics of the water.
     """
     metrics = ["Eigenvalue Centrality", "Degree Centrality", "Betweenness Centrality"]
     df = pd.DataFrame(index = Hbond_graph_dict.keys(), columns = metrics)
@@ -202,9 +229,9 @@ def get_graph_centrality_metrics(Hbond_graph_dict):
         degree_centrality = nx.degree_centrality(graph)
         betweenness_centrality = nx.betweenness_centrality(graph, normalized=True)
         
-        df.at[prot, "Eigenvalue Centrality"] = np.sort( [eigenvector_centrality[n] for n in water_nodes] )
-        df.at[prot, "Degree Centrality"] = np.sort( [degree_centrality[n] for n in water_nodes] )
-        df.at[prot, "Betweenness Centrality"] = np.sort( [betweenness_centrality[n] for n in water_nodes] )
+        df.at[prot, "Eigenvalue Centrality"] = np.sort( [eigenvector_centrality[n] for n in water_nodes], ascending=False )
+        df.at[prot, "Degree Centrality"] = np.sort( [degree_centrality[n] for n in water_nodes], ascending=False )
+        df.at[prot, "Betweenness Centrality"] = np.sort( [betweenness_centrality[n] for n in water_nodes], ascending=False )
 
     return df
 
@@ -218,7 +245,9 @@ Visualization
 """
 def get_colors(Hbond_graph):
     """
-    Utility function to get colors from graph
+    Utility function to get colors from graph.
+    Input is an H-bond graph.
+    Outputs are the node and edge colors for drawing as defined in the graph.
     """
     type_to_color = {"water": "blue", "donor": "red", "acceptor":"tomato"}
     residue_dict = nx.get_node_attributes(Hbond_graph, 'res')
@@ -227,25 +256,76 @@ def get_colors(Hbond_graph):
     return node_colors, edge_colors
 
 
-def draw_graph_2d(Hbond_graph, ax):
+def draw_graph_2d(Hbond_graph, ax): 
     """
     Set the characteristics of the graph and draw projected onto XY plane.
+    Input is an H-bond graph, the plot axis with 2-D projection.
+    Output is a list of legend elements for the plot.
     """ 
-    pos = nx.get_node_attributes(Hbond_graph, 'pos') # TODO adapt this using PCA since pos is now a 3-tuple
+    pos = nx.get_node_attributes(Hbond_graph, 'pos')
+    xy = np.vstack( list(pos.values()) )[:, :2]
+    z = np.vstack( list(pos.values()) )[:,-1:] # -1: to keep as 2d array
+    xy_principal = PCA(n_components=1).fit_transform( xy )
+    coordinates_2d = np.hstack(  [xy_principal, z] )
+    pos_2d = dict( zip(Hbond_graph.nodes(), coordinates_2d) ) # pair new coordinate back with original node
     node_colors, edge_colors = get_colors(Hbond_graph)
-    nx.draw(Hbond_graph, pos, ax=ax, node_color=node_colors, edge_color=edge_colors, node_size=3)
+    
+    nx.draw(Hbond_graph, pos_2d, ax=ax, node_color=node_colors, edge_color=edge_colors, node_size=3)
+    
+    legend_elements = [     # make a legend for the plot
+    Line2D([0], [0], marker='o', color='w', label='Water', markerfacecolor='blue', markersize=10, alpha=0.2),
+    Line2D([0], [0], marker='o', color='w', label='Donor', markerfacecolor='red', markersize=10, alpha=0.2),
+    Line2D([0], [0], marker='o', color='w', label='Acceptor', markerfacecolor='tomato', markersize=10, alpha=0.2),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='black', label='Water to Water H-bond', alpha=0.2),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='violet', label='Water to Donor/Acceptor H-bond', alpha=0.2),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='green', label='Donor to Acceptor H-bond', alpha=0.2)   
+    ]
+    
+    return legend_elements
+
+
+def plot_backbone_2d(coordinates, ax, ss_positions): 
+    """
+    Plotting function for 2D backbone. 
+    Input are the 3D coordinates of the backbone, the plot axis with 2-D projection, and a list of tuples (start, end) of indices containing secondary structure elements.
+    Output is a list of legend elements for the plot.
+    """
+    # split color based on secondary structure
+    last_colored = -1
+    xy = coordinates[:,:2]
+    z = coordinates[:,-1:] # -1: to keep as 2d array
+    xy_principal = PCA(n_components=1).fit_transform( xy )
+    coordinates_2d = np.hstack( [xy_principal, z] )
+    
+    for (start, end) in ss_positions:
+        ax.plot(coordinates_2d[last_colored+1:start,0], coordinates_2d[last_colored+1:start,1], color="darkgreen") # color the previous segment green
+        ax.plot(coordinates_2d[start-1:end,0], coordinates_2d[start-1:end,1], color="darkred") # color the ss segment red
+        last_colored = end-2
+        
+    ax.plot(coordinates_2d[last_colored+1:-1,0], coordinates_2d[last_colored+1:-1,1], color="darkgreen") # color the last segment green
+    
+    legend_elements = [ # make a legend for the plot
+        Line2D([0], [1], linewidth=1, linestyle='-', color='darkgreen', label='Protein backbone'),
+        Line2D([0], [1], linewidth=1, linestyle='-', color='darkred', label='Secondary structure')
+    ]
+    
+    return legend_elements
 
 
 def draw_graph_3d(Hbond_graph, ax):
     """
-    Plotting function for 3D graph. ax must be with a 3-D projection.
+    Plotting function for 3D graph. 
+    Input is an H-bond graph, the plot axis with 3-D projection.
+    Output is a list of legend elements for the plot.
+    Note: to draw a graph with a subset of nodes, use a graph.subgraph(nodes) as the input
     """
+    
     pos = nx.get_node_attributes(Hbond_graph, 'pos')
     node_colors, edge_colors = get_colors(Hbond_graph)
     
     # Plot nodes
     # List comprehension gives a list of (x,y,z) coordinates and zip(*([])) transposes them to the format for matplotlib
-    xs, ys, zs = zip( *[pos[node] for node in Hbond_graph.nodes()] ) 
+    xs, ys, zs = zip( *[pos[n] for n in Hbond_graph.nodes()] ) 
     ax.scatter(xs, ys, zs, s=5, c=node_colors, alpha=0.4)
 
     # Plot edges
@@ -265,7 +345,13 @@ def draw_graph_3d(Hbond_graph, ax):
     return legend_elements
 
 
-def plot_backbone(coordinates, ax, ss_positions): 
+    
+def plot_backbone_3d(coordinates, ax, ss_positions):
+    """
+    Plotting function for 3D backbone. 
+    Input are the coordinates of the backbone, the plot axis with 3-D projection, and a list of tuples (start, end) of indices containing secondary structure elements.
+    Output is a list of legend elements for the plot.
+    """
     # split color based on secondary structure
     last_colored = -1
     for (start, end) in ss_positions:
@@ -283,15 +369,18 @@ def plot_backbone(coordinates, ax, ss_positions):
     return legend_elements
 
 
-def plot_metric_all_proteins(data_series, title=None):
+def plot_metric_all_proteins(data_series, limit=None, title=None):
     """
     Plotting function for a metric for all proteins. Data is a df series of the metric, one for each protein.
     """
+    
     fig, ax = plt.subplots(3, 7, figsize = (12, 14), sharex=True, sharey=True) # 21 proteins
     for idx, data in enumerate(data_series):
         row, col = idx//7, idx%7
         prot = data_series.index[idx]
-        ax[row,col].scatter(data)
+        if not limit:
+            limit = len(data) 
+        ax[row,col].scatter(data[:limit])
         ax[row,col].set_title(prot)
         
     if title:
@@ -312,15 +401,20 @@ pdb_path = pathlib.Path(DATA_FOLDER)
 pdb_files = list(pdb_path.glob('*_final.pdb')) 
 parser = PDB.PDBParser(QUIET=True)
 
-apo_id = '1PW2'
+apo_prot = '1PW2'
+test_id = '3QZH'
 Hbond_graphs = {}
 backbone_coordinates = {}
 for idx, file_name in enumerate(pdb_files):
     prot = file_name.stem.split('_')[0]
     structure = parser.get_structure(prot, file_name)
-    backbone = get_filtered_atoms(structure, residue_target = AA, atom_target = ["CA"])
     
-    # align on alpha carbon atoms
+    backbone = get_filtered_atoms(structure, residue_target = AA, atom_target = ["CA"])
+    water = get_filtered_atoms(structure, residue_target = WATER, atom_target = ["O"])
+    Hbond_donors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_DONOR_ATOMS)
+    Hbond_acceptors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_ACCEPTOR_ATOMS)
+    
+    # find rotation to align on alpha carbon atoms
     if idx == 0:
         align_backbone = backbone.copy()
         align_template = get_coordinates_from_atoms(align_backbone, rotation=None)
@@ -329,36 +423,66 @@ for idx, file_name in enumerate(pdb_files):
         coordinates = get_coordinates_from_atoms(backbone, rotation=None)
         rotation, _ = Rotation.align_vectors(align_template, coordinates)
        
-    water = get_filtered_atoms(structure, residue_target = WATER, atom_target = ["O"])
-    Hbond_donors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_DONOR_ATOMS)
-    Hbond_acceptors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_ACCEPTOR_ATOMS)
     graph = graph_from_atom_sets(water, Hbond_donors, Hbond_acceptors, rotation=rotation, intramolecular_only=False)
-    
     Hbond_graphs[prot] = graph
     backbone_coordinates[prot] = get_coordinates_from_atoms(backbone, rotation=rotation)
 
 """
 Get graph metrics.
 """
+# TODO hopefully will be more useful once extraneous waters have been removed programatically
 # df_metrics = get_graph_centrality_metrics(Hbond_graphs)
-# plot_metric_all_proteins(df_metrics["Eigenvalue Centrality"], "Eigenvalue Centrality")
-# plot_metric_all_proteins(df_metrics["Degree Centrality"], "Degree Centrality")
-# plot_metric_all_proteins(df_metrics["Betweenness Centrality", "Betweenness Centrality"])
+# plot_metric_all_proteins(df_metrics["Eigenvalue Centrality"], limit=10, title="Eigenvalue Centrality")
+# plot_metric_all_proteins(df_metrics["Degree Centrality"], limit=10, title="Degree Centrality")
+# plot_metric_all_proteins(df_metrics["Betweenness Centrality"], limit=10, title="Betweenness Centrality")
 
 
 """
 Display hydrogen bonding network for the apo and one holo protein.
 """
-# prots = ['1PW2', '3QZH'] # apo, holo
+# prots = [apo_prot, test_id] # apo, holo
 # num_prots = len(prots)
-# fig  = plt.figure( figsize=(num_prots * 7, 6) )
-# axs = [ fig.add_subplot(1, num_prots, i+1, projection='3d') for i in range(num_prots) ]
+# fig, axs = plt.subplots(1, 2, figsize=(num_prots * 7, 6))
+# # fig  = plt.figure( figsize=(num_prots * 7, 6) )
+# # axs = [ fig.add_subplot(1, num_prots, i+1, projection='3d') for i in range(num_prots) ]
+
 # for prot, ax in zip(prots, axs):
     # ax.set_title(f"{prot}")  
     # legend_elements = []
-    # legend_elements += draw_graph_3d(Hbond_graphs[prot], ax) # plot graph        
-    # legend_elements += plot_backbone(backbone_coordinates[prot], ax, SS_POSITIONS) # plot backbone
+    # legend_elements += draw_graph_2d(Hbond_graphs[prot], ax) # plot graph        
+    # legend_elements += plot_backbone_2d(backbone_coordinates[prot], ax, SS_POSITIONS) # plot backbone
 
 # axs[-1].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), title="Graph elements")
 # plt.tight_layout()
 # plt.show()
+
+"""Plot map with reduced waters"""
+# starting with the apo structure waters, identify waters conserved in all structures
+apo_prot = '1PW2'
+distance_cutoff = 2*HBOND_MAX_DIST # max distance for two waters to map together, 180 deg H bond rotation around one atom
+common_waters = get_water_nodes(Hbond_graphs[apo_prot])
+protein_nodes = get_protein_nodes(Hbond_graphs[apo_prot])
+
+# loop through all proteins and keep the remaining mappable waters
+for test_prot in Hbond_graphs.keys():
+    test_waters = get_water_nodes(Hbond_graphs[test_prot])
+    common_waters, _ = map_nodes(Hbond_graphs[apo_prot], common_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)    
+    if not common_waters:
+        print("No more mappable waters remaining")
+        break
+
+print(f"Common waters remaining: {len(common_waters)}")
+
+fig, (ax1, ax2)  = plt.subplots( 1, 2, figsize=(14, 6) )
+legend_elements = draw_graph_2d(Hbond_graphs[apo_prot].subgraph(protein_nodes + common_waters), ax1)
+legend_elements = draw_graph_2d(Hbond_graphs[apo_prot], ax2)
+
+ax1.set_title("Common water only")
+ax2.set_title("All water")
+
+ax2.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), title="Graph elements")
+plt.show()
+  
+  
+    
+    
