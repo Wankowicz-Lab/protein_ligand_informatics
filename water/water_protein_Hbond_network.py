@@ -109,14 +109,15 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, rotation=None
     donor_coordinates = get_coordinates_from_atoms(donor_atoms, rotation = rotation)    
     acceptor_coordinates = get_coordinates_from_atoms(acceptor_atoms, rotation = rotation)    
     
-    # Add nodes to the graph with position as a node attribute
+    # Add nodes to the graph
     if not intramolecular_only:
         for idx, coord in enumerate(water_coordinates):
-            Hbond_graph.add_node(f"w{idx}", pos=coord, res="water")
+            # freq is in how many structures this atom can be mapped by map_nodes
+            Hbond_graph.add_node(water_atoms[idx].get_serial_number(), pos=coord, res="water", freq=1)
     for idx, coord in enumerate(donor_coordinates):
-        Hbond_graph.add_node(f"d{idx}", pos=coord, res="donor")
+        Hbond_graph.add_node(donor_atoms[idx].get_serial_number(), pos=coord, res="donor")
     for idx, coord in enumerate(acceptor_coordinates):
-        Hbond_graph.add_node(f"a{idx}", pos=coord, res="acceptor")
+        Hbond_graph.add_node(acceptor_atoms[idx].get_serial_number(), pos=coord, res="acceptor")
 
     # Add H-bond edges 
     if not intramolecular_only:
@@ -126,7 +127,8 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, rotation=None
                 np.logical_and(water_water_distances < HBOND_MAX_DIST, water_water_distances > HBOND_MIN_DIST) 
                 )[0]
             Hbond_graph.add_edges_from(
-                [ (f"w{idx}", f"w{jdx}") for jdx in connected_edges ],
+                [ (water_atoms[idx].get_serial_number(), water_atoms[idx].get_serial_number())
+                for jdx in connected_edges ],
                 color="black", bond_type="ww" )
             
             water_donor_distances = np.linalg.norm(coord - donor_coordinates, axis=1) # water to donor
@@ -134,7 +136,8 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, rotation=None
                 np.logical_and(water_donor_distances < HBOND_MAX_DIST, water_donor_distances > HBOND_MIN_DIST)
                 )[0]
             Hbond_graph.add_edges_from( 
-                [ (f"w{idx}", f"d{jdx}") for jdx in connected_edges ],
+                [ (water_atoms[idx].get_serial_number(), donor_atoms[idx].get_serial_number())
+                for jdx in connected_edges ],
                 color="violet", bond_type="wp" )
                 
             water_acceptor_distances = np.linalg.norm(coord - acceptor_coordinates, axis=1) # water to acceptor
@@ -142,7 +145,8 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, rotation=None
                 np.logical_and(water_acceptor_distances < HBOND_MAX_DIST, water_acceptor_distances > HBOND_MIN_DIST)
                 )[0]
             Hbond_graph.add_edges_from( 
-                [ (f"w{idx}", f"a{jdx}") for jdx in connected_edges ],
+                [ (water_atoms[idx].get_serial_number(), acceptor_atoms[idx].get_serial_number())
+                for jdx in connected_edges ],
                 color="violet", bond_type="wp" )
         
     for idx, donor in enumerate(donor_coordinates): # donor to acceptor, intra-molecular
@@ -151,8 +155,9 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, rotation=None
             np.logical_and(donor_acceptor_distances < HBOND_MAX_DIST, donor_acceptor_distances > HBOND_MIN_DIST)
             )[0]
         Hbond_graph.add_edges_from( 
-            [ (f"d{idx}", f"a{jdx}") for jdx in connected_edges 
-            if donor_atoms[idx].get_parent() != acceptor_atoms[jdx].get_parent() ], # do not count as H bond both acceptor and donor are in the same residue
+            [ (donor_atoms[idx].get_serial_number(), acceptor_atoms[idx].get_serial_number()) 
+            for jdx in connected_edges 
+            if donor_atoms[idx].get_parent() != acceptor_atoms[jdx].get_parent() ], # do not count as H bond if both acceptor and donor are in the same residue
             color="green", bond_type="pp") 
         
     return Hbond_graph
@@ -326,7 +331,7 @@ def draw_graph_3d(Hbond_graph, ax):
     # Plot nodes
     # List comprehension gives a list of (x,y,z) coordinates and zip(*([])) transposes them to the format for matplotlib
     xs, ys, zs = zip( *[pos[n] for n in Hbond_graph.nodes()] ) 
-    ax.scatter(xs, ys, zs, s=5, c=node_colors, alpha=0.4)
+    ax.scatter(xs, ys, zs, s=50, c=node_colors, alpha=0.4)
 
     # Plot edges
     for idx, (u,v) in enumerate(Hbond_graph.edges()):
@@ -389,6 +394,26 @@ def plot_metric_all_proteins(data_series, limit=None, title=None):
     plt.show()
 
 
+"""
+Edit PDB b factors to view in PyMol.
+input_file and output_file are string names of the PDB files.
+b_factor_dict is a dict of (node_id:new_value) pairs
+"""
+def edit_b_factor(input_file, output_file, b_factor_dict):
+    parser = PDB.PDBParser(QUIET=True)
+    structure = parser.get_structure("test", input_file)
+
+    for model in structure:
+        for chain in model:
+            for residue in chain:
+                for atom in residue:
+                    atom.set_bfactor( b_factor_dict.get(atom.get_serial_number(), 0) )
+
+    # Save the modified structure
+    io = PDB.PDBIO()
+    io.set_structure(structure)
+    io.save(output_file)
+
 
 ################## MAIN ##################
 
@@ -440,49 +465,40 @@ Get graph metrics.
 """
 Display hydrogen bonding network for the apo and one holo protein.
 """
-# prots = [apo_prot, test_id] # apo, holo
+
+# starting with the apo structure waters, identify waters conserved in all structures
+apo_prot = '1PW2'
+holo_prot = '3QZH'
+distance_cutoff = HBOND_MAX_DIST # max distance for two waters to map together
+
+# loop through all proteins and keep the remaining mappable waters
+for ref_prot in Hbond_graphs.keys():
+    ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
+    for test_prot in Hbond_graphs.keys():
+        if test_prot == ref_prot:
+            continue
+        test_waters = get_water_nodes(Hbond_graphs[test_prot])
+        ref_waters_mapped, _ = map_nodes(Hbond_graphs[ref_prot], ref_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)  
+        for w in ref_waters_mapped:
+            Hbond_graphs[ref_prot].nodes()[w]['freq'] += 1    
+
+        edit_b_factor( input_file = f"{DATA_FOLDER}{ref_prot}_final.pdb", 
+            output_file = f"{DATA_FOLDER}/all_proteins_edited/{ref_prot}_edited.pdb", 
+            b_factor_dict = nx.get_node_attributes(Hbond_graphs[ref_prot], 'freq') )
+    
+    
+# prots = [apo_prot]
 # num_prots = len(prots)
-# fig, axs = plt.subplots(1, 2, figsize=(num_prots * 7, 6))
-# # fig  = plt.figure( figsize=(num_prots * 7, 6) )
-# # axs = [ fig.add_subplot(1, num_prots, i+1, projection='3d') for i in range(num_prots) ]
+# fig  = plt.figure( figsize=(num_prots * 7, 6) )
+# axs = [ fig.add_subplot(1, num_prots, i+1, projection='3d') for i in range(num_prots) ]
 
 # for prot, ax in zip(prots, axs):
     # ax.set_title(f"{prot}")  
     # legend_elements = []
-    # legend_elements += draw_graph_2d(Hbond_graphs[prot], ax) # plot graph        
-    # legend_elements += plot_backbone_2d(backbone_coordinates[prot], ax, SS_POSITIONS) # plot backbone
+    # legend_elements += draw_graph_3d(Hbond_graphs[prot].subgraph(common_waters), ax) # plot graph        
+    # legend_elements += plot_backbone_3d(backbone_coordinates[prot], ax, SS_POSITIONS) # plot backbone
 
 # axs[-1].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), title="Graph elements")
 # plt.tight_layout()
 # plt.show()
 
-"""Plot map with reduced waters"""
-# starting with the apo structure waters, identify waters conserved in all structures
-apo_prot = '1PW2'
-distance_cutoff = 2*HBOND_MAX_DIST # max distance for two waters to map together, 180 deg H bond rotation around one atom
-common_waters = get_water_nodes(Hbond_graphs[apo_prot])
-protein_nodes = get_protein_nodes(Hbond_graphs[apo_prot])
-
-# loop through all proteins and keep the remaining mappable waters
-for test_prot in Hbond_graphs.keys():
-    test_waters = get_water_nodes(Hbond_graphs[test_prot])
-    common_waters, _ = map_nodes(Hbond_graphs[apo_prot], common_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)    
-    if not common_waters:
-        print("No more mappable waters remaining")
-        break
-
-print(f"Common waters remaining: {len(common_waters)}")
-
-fig, (ax1, ax2)  = plt.subplots( 1, 2, figsize=(14, 6) )
-legend_elements = draw_graph_2d(Hbond_graphs[apo_prot].subgraph(protein_nodes + common_waters), ax1)
-legend_elements = draw_graph_2d(Hbond_graphs[apo_prot], ax2)
-
-ax1.set_title("Common water only")
-ax2.set_title("All water")
-
-ax2.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), title="Graph elements")
-plt.show()
-  
-  
-    
-    
