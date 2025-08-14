@@ -2,7 +2,6 @@
 Takes a PDB file with protein and water coordinates.
 Creates a graph with vertices of water/AA residues and edges if they have an H bond.
 Committed on github under protein_ligand_informatics/water/water_protein_Hbond_network.py
-
 """
 
 from Bio import PDB
@@ -17,6 +16,8 @@ from scipy.spatial.transform import Rotation
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from sklearn.decomposition import PCA
+from sklearn.cluster import DBSCAN
+from sklearn.manifold import MDS
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -116,8 +117,6 @@ def get_ligand_residue(pdb_structure):
                     return res
 
 
-# TODO fix the mol conversion and test online to ensure correctness
-# adds implicit hydrogens and does not infer aromatic ring
 def residue_to_mol(residue):
     """
     Written by microsoft copilot.
@@ -231,8 +230,6 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, translation=N
     return Hbond_graph
     
    
-    
-    
 """
 Graph analysis
 """
@@ -535,34 +532,65 @@ distance_cutoff = HBOND_MAX_DIST/2 # max distance for two waters to map together
 # loop through all proteins and find the mappable waters
 lig_similarities = []
 water_similarities = []
+num_ligands = len(all_prots)-1
+tanimoto_distance_matrix = np.zeros([num_ligands, num_ligands])
 for idx, ref_prot in enumerate(all_prots[1:-1]): 
-    ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
+    # ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
     mol_ref = residue_to_mol(ligands[ref_prot])
-    for test_prot in all_prots[idx+1:]:
-        print(f"Mapping waters for {ref_prot} and {test_prot}")
-        test_waters = get_water_nodes(Hbond_graphs[test_prot])
-        ref_waters_mapped, test_waters_mapped = map_nodes(Hbond_graphs[ref_prot], ref_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)
+    for jdx, test_prot in enumerate(all_prots[idx+1:]):
+        # print(f"Mapping waters for {ref_prot} and {test_prot}")
+        # test_waters = get_water_nodes(Hbond_graphs[test_prot])
+        # ref_waters_mapped, test_waters_mapped = map_nodes(Hbond_graphs[ref_prot], ref_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)
 
-        for w in ref_waters_mapped:
-            Hbond_graphs[ref_prot].nodes()[w]['freq'] += 1
-        for w in test_waters_mapped:
-            Hbond_graphs[test_prot].nodes()[w]['freq'] += 1
+        # for w in ref_waters_mapped:
+            # Hbond_graphs[ref_prot].nodes()[w]['freq'] += 1
+        # for w in test_waters_mapped:
+            # Hbond_graphs[test_prot].nodes()[w]['freq'] += 1
             
         if apo_prot in [ref_prot, test_prot]: continue # do not compare ligands for apo structure
         
         mol_test = residue_to_mol(ligands[test_prot])
         chem_tanimoto = tanimoto_similarity(mol_ref, mol_test)
-        lig_similarities.append(chem_tanimoto)      
+        tanimoto_distance_matrix[idx, idx+jdx] = 1 - chem_tanimoto
+        tanimoto_distance_matrix[idx+jdx, idx] = 1 - chem_tanimoto
+        # lig_similarities.append(chem_tanimoto)      
         
-        # calculate the tanimoto = union / intersection of the water atoms
-        bit_tanimoto = len(ref_waters_mapped) / ( len(ref_waters) + len(test_waters) - len(ref_waters_mapped) )
-        water_similarities.append( bit_tanimoto )
+        # # calculate the tanimoto = union / intersection of the water atoms
+        # bit_tanimoto = len(ref_waters_mapped) / ( len(ref_waters) + len(test_waters) - len(ref_waters_mapped) )
+        # water_similarities.append( bit_tanimoto )
        
             
     # # output a new pdb with the freq count in the b-factor column to visualize in pymol
     # edit_b_factor( input_file = f"{DATA_FOLDER}{ref_prot}_final.pdb", 
         # output_file = f"{DATA_FOLDER}/all_proteins_edited/{ref_prot}_edited.pdb", 
         # b_factor_dict = nx.get_node_attributes(Hbond_graphs[ref_prot], 'freq') )
+
+
+print(tanimoto_distance_matrix)
+db = DBSCAN(eps=0.4, min_samples=2, metric='precomputed')
+labels = db.fit_predict(tanimoto_distance_matrix)
+colors = [f"C{l+1}" for l in labels]
+print("DBSCAN clusters:", dict(zip(all_prots[1:], labels)))
+
+
+# project to 2D using MDS
+mds = MDS(n_components=2, dissimilarity='precomputed', random_state=42, normalized_stress='auto')
+coords = mds.fit_transform(tanimoto_distance_matrix)
+
+# plot with labels
+plt.figure(figsize=(8, 6))
+plt.scatter(coords[:, 0], coords[:, 1], color=colors, edgecolor='black', s=100)
+
+for i, name in enumerate(all_prots[1:]):
+    plt.text(coords[i, 0]+0.02, coords[i, 1]+0.02, name, fontsize=12)
+
+plt.title("Ligand Projection via Tanimoto Distance (MDS)")
+plt.xlabel("MDS Dimension 1")
+plt.ylabel("MDS Dimension 2")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
 
 
 # plt.scatter(lig_similarities, water_similarities, s=10)
