@@ -6,26 +6,27 @@ Committed on github under protein_ligand_informatics/water/water_protein_Hbond_n
 """
 
 from Bio import PDB
+from rdkit import Chem
+from rdkit.Chem import AllChem, DataStructs
+from rdkit import RDLogger
+RDLogger.DisableLog('rdApp.*')
 
 import numpy as np
-import pandas as pd
 import networkx as nx
 from scipy.spatial.transform import Rotation
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
 from sklearn.decomposition import PCA
 
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
 
-from rdkit.Chem import AllChem, DataStructs
-from openbabel import pybel
-
-
 import glob
 import pathlib
 import sys
+import requests
 
 
 # UNIVERSAL CONSTANTS
@@ -115,41 +116,47 @@ def get_ligand_residue(pdb_structure):
                     return res
 
 
-def residue_to_smiles(residue):
+# TODO fix the mol conversion and test online to ensure correctness
+# adds implicit hydrogens and does not infer aromatic ring
+def residue_to_mol(residue):
     """
     Written by microsoft copilot.
-    Takes a residue (list of atoms) and writes a SMILES string.
+    Takes a residue and writes a mol object.
     """
-    # Build PDB string manually
-    pdb_lines = []
+
     if residue is None:
         return ""
-        
-    for atom in residue:
-        name = atom.get_name()
-        x, y, z = atom.get_coord()
-        element = atom.element.strip() or name[0]  # fallback if element missing
-        pdb_lines.append(
-            f"HETATM{atom.get_serial_number():5d} {name:<4} {residue.get_resname():>3} A{residue.get_id()[1]:4d}"
-            f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {element:>2}"
-        )
-    pdb_str = "\n".join(pdb_lines)
 
-    # Convert to SMILES using Open Babel
-    mol = pybel.readstring("pdb", pdb_str)
-    return mol.write("smi").strip()    
+    ligand_id = residue.get_resname()
+    url = f"https://files.rcsb.org/ligands/download/{ligand_id}_ideal.sdf"
+    response = requests.get(url)
+    if response.status_code == 200:
+        sdf_data = response.text
+        suppl = Chem.SDMolSupplier()
+        suppl.SetData(sdf_data)
+        mol = suppl[0]
+        return mol 
+    else:
+        raise ValueError(f"Ligand {ligand_id} not found at RCSB")
+
+      
     
     
-def tanimoto_similarity(smiles1, smiles2):
+def tanimoto_similarity(mol1, mol2):
     """
-    Written by microsoft copilot.
-    Takes two smiles strings and outputs the tanimoto distance between them
+    Takes two mol objects and outputs the tanimoto similarity between them
     """
-    mol1 = Chem.MolFromSmiles(smiles1)
-    mol2 = Chem.MolFromSmiles(smiles2)
 
-    fp1 = AllChem.GetMorganFingerprintAsBitVect(mol1, radius=2, nBits=2048)
-    fp2 = AllChem.GetMorganFingerprintAsBitVect(mol2, radius=2, nBits=2048)
+    gen = Chem.rdFingerprintGenerator.GetRDKitFPGenerator(
+        maxPath=7,       # max bond path length
+        fpSize=2048,     # fingerprint size
+        useHs=False,     # ignore explicit hydrogens
+        branchedPaths=True,  # include branched paths
+        useBondOrder=True    # include bond order info
+    )
+    
+    fp1 = gen.GetFingerprint(mol1)
+    fp2 = gen.GetFingerprint(mol2)
 
     tanimoto = DataStructs.TanimotoSimilarity(fp1, fp2)
     
@@ -490,19 +497,21 @@ backbone_coordinates = {}
 ligands = {}
 all_prots = []
 
-# TODO extract ligand from structure, calculate tanimoto distance between them
 for idx, file_name in enumerate(pdb_files):
-    print(file_name)
     prot = file_name.stem.split('_')[0]
+    print(f"Parsing pdb file for {prot}")
     all_prots.append(prot)
     structure = parser.get_structure(prot, file_name)
+    
+    ligand = get_ligand_residue(structure)
+    ligands[prot] = ligand
     
     backbone = get_filtered_atoms(structure, residue_target = AA, atom_target = ["CA"])
     water = get_filtered_atoms(structure, residue_target = WATER, atom_target = ["O"])
     Hbond_donors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_DONOR_ATOMS)
     Hbond_acceptors = get_filtered_atoms(structure, residue_target = AA, atom_target = DEFAULT_ACCEPTOR_ATOMS)
-    ligand = get_ligand_residue(structure)
-
+    
+    
     # find translation and rotation to align on alpha carbon atoms
     coordinates = get_coordinates_from_atoms(backbone, translation=None, rotation=None)
     translation = -np.mean(coordinates, axis=0)
@@ -516,43 +525,62 @@ for idx, file_name in enumerate(pdb_files):
     graph = graph_from_atom_sets(water, Hbond_donors, Hbond_acceptors, translation=translation, rotation=rotation)
     Hbond_graphs[prot] = graph
     backbone_coordinates[prot] = get_coordinates_from_atoms(backbone, translation=translation, rotation=rotation)
-    ligands[prot] = ligand
-    smiles1 = residue_to_smiles(ligand)
-    print("SMILES 1:", smiles1)
-
-
-ref_prot = '1PXI'
-for test_prot in all_prots:
-    if test_prot in [ref_prot, apo_prot]:
-        continue
-    smiles_ref = residue_to_smiles(ligands[ref_prot])
-    smiles_test = residue_to_smiles(ligands[test_prot])
-    tanimoto = tanimoto_similarity(smiles_ref, smiles_test)
-    print(f"{tanimoto:.3f"})
+    
 
 """
 Identify conserved waters.
 """
-# apo_prot = '1PW2'
-# holo_prot = '3QZH' # test for alignment
-# distance_cutoff = HBOND_MAX_DIST/2 # max distance for two waters to map together, estimated by inflection point in number of water pairs as a function of this distance, leaves 37 waters conserved in all structures
+distance_cutoff = HBOND_MAX_DIST/2 # max distance for two waters to map together, estimated by inflection point in number of water pairs as a function of this distance, leaves 37 waters conserved in all structures
     
-# # loop through all proteins and find the mappable waters
-# for ref_prot in Hbond_graphs.keys():
-    # ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
-    # for test_prot in Hbond_graphs.keys():
-        # if test_prot == ref_prot:
-            # continue
-        # test_waters = get_water_nodes(Hbond_graphs[test_prot])
-        # ref_waters_mapped, test_waters_mapped = map_nodes(Hbond_graphs[ref_prot], ref_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)
+# loop through all proteins and find the mappable waters
+lig_similarities = []
+water_similarities = []
+for idx, ref_prot in enumerate(all_prots[1:-1]): 
+    ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
+    mol_ref = residue_to_mol(ligands[ref_prot])
+    for test_prot in all_prots[idx+1:]:
+        print(f"Mapping waters for {ref_prot} and {test_prot}")
+        test_waters = get_water_nodes(Hbond_graphs[test_prot])
+        ref_waters_mapped, test_waters_mapped = map_nodes(Hbond_graphs[ref_prot], ref_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)
 
-        # for w in ref_waters_mapped:
-            # Hbond_graphs[ref_prot].nodes()[w]['freq'] += 1
+        for w in ref_waters_mapped:
+            Hbond_graphs[ref_prot].nodes()[w]['freq'] += 1
+        for w in test_waters_mapped:
+            Hbond_graphs[test_prot].nodes()[w]['freq'] += 1
+            
+        if apo_prot in [ref_prot, test_prot]: continue # do not compare ligands for apo structure
+        
+        mol_test = residue_to_mol(ligands[test_prot])
+        chem_tanimoto = tanimoto_similarity(mol_ref, mol_test)
+        lig_similarities.append(chem_tanimoto)      
+        
+        # calculate the tanimoto = union / intersection of the water atoms
+        bit_tanimoto = len(ref_waters_mapped) / ( len(ref_waters) + len(test_waters) - len(ref_waters_mapped) )
+        water_similarities.append( bit_tanimoto )
+       
             
     # # output a new pdb with the freq count in the b-factor column to visualize in pymol
     # edit_b_factor( input_file = f"{DATA_FOLDER}{ref_prot}_final.pdb", 
         # output_file = f"{DATA_FOLDER}/all_proteins_edited/{ref_prot}_edited.pdb", 
         # b_factor_dict = nx.get_node_attributes(Hbond_graphs[ref_prot], 'freq') )
+
+
+# plt.scatter(lig_similarities, water_similarities, s=10)
+# plt.xlabel("Tanimoto similarity between ligands")
+# plt.xlim([0,1])
+# plt.ylabel("Tanimoto similarity between conserved waters")
+# plt.ylim([0,1])
+# plt.title(f"All pairs")
+# plt.show()   
+
+
+# TODO count unique waters
+# all_water_freqs = np.concatenate( [get_attr_from_nodes(Hbond_graphs[prot], get_water_nodes(Hbond_graphs[prot]), 'freq') for prot in all_prots] )
+# water_freq, water_freq_count = np.unique(all_water_freqs, return_counts=True)
+# water_freq_count = np.ceil( water_freq_count / (1 + water_freq) ) # round up in case some clusters aren't strongly connected
+# unique_water_count = sum( water_freq_count )
+       
+
    
 """
 Get graph metrics.
