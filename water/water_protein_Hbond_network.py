@@ -15,6 +15,7 @@ import networkx as nx
 from scipy.spatial.transform import Rotation
 from scipy.spatial.distance import cdist
 from scipy.optimize import linear_sum_assignment
+from scipy.stats import spearmanr
 from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
 from sklearn.manifold import MDS
@@ -44,7 +45,7 @@ DEFAULT_DONOR_ATOMS = ['N', 'ND1','ND2', 'NE', 'NE1', 'NE2', 'NH1', 'NH2', 'NZ',
 DEFAULT_ACCEPTOR_ATOMS = ['ND1', 'NE2', 'O', 'OD1', 'OD2', 'OE1', 'OE2', 'OG', 'OG1', 'OH', 'SD', 'SG']
 
 # CONSTANTS FOR THIS PROJECT (change based on protein)
-DATA_FOLDER = "../PDB Data/cdk2/"
+DATA_FOLDER = "../PDB_Data_cdk2/cdk2_original/"
 OTHER_SOLVENT=["EDO","PO4"] # constructed by looking through all non WATER + AA or ligand labels
 SS_POSITIONS= [ (4,12), (17,23), (29,35), (45,56), (66,72), (75,81),
         (85,94), (100,121), (129,131), (133,135), (141,143), (147,152), (170,175),
@@ -194,27 +195,27 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, translation=N
             np.logical_and(water_water_distances < HBOND_MAX_DIST, water_water_distances > HBOND_MIN_DIST) 
             )[0]
         Hbond_graph.add_edges_from(
-            [ (water_atoms[idx].get_serial_number(), water_atoms[idx].get_serial_number())
+            [ (water_atoms[idx].get_serial_number(), water_atoms[jdx].get_serial_number())
             for jdx in connected_edges ],
-            color="black", bond_type="ww" )
+            color="black", bond_type="ww", style="solid" )
         
         water_donor_distances = np.linalg.norm(coord - donor_coordinates, axis=1) # water to donor
         connected_edges = np.nonzero( 
             np.logical_and(water_donor_distances < HBOND_MAX_DIST, water_donor_distances > HBOND_MIN_DIST)
             )[0]
         Hbond_graph.add_edges_from( 
-            [ (water_atoms[idx].get_serial_number(), donor_atoms[idx].get_serial_number())
+            [ (water_atoms[idx].get_serial_number(), donor_atoms[jdx].get_serial_number())
             for jdx in connected_edges ],
-            color="violet", bond_type="wp" )
+            color="violet", bond_type="wp", style="solid" )
             
         water_acceptor_distances = np.linalg.norm(coord - acceptor_coordinates, axis=1) # water to acceptor
         connected_edges = np.nonzero( 
             np.logical_and(water_acceptor_distances < HBOND_MAX_DIST, water_acceptor_distances > HBOND_MIN_DIST)
             )[0]
         Hbond_graph.add_edges_from( 
-            [ (water_atoms[idx].get_serial_number(), acceptor_atoms[idx].get_serial_number())
+            [ (water_atoms[idx].get_serial_number(), acceptor_atoms[jdx].get_serial_number())
             for jdx in connected_edges ],
-            color="violet", bond_type="wp" )
+            color="violet", bond_type="wp", style="solid" )
         
     for idx, donor in enumerate(donor_coordinates): # donor to acceptor, intra-molecular
         donor_acceptor_distances = np.linalg.norm(donor - acceptor_coordinates, axis=1) # water to donor 
@@ -222,10 +223,10 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, translation=N
             np.logical_and(donor_acceptor_distances < HBOND_MAX_DIST, donor_acceptor_distances > HBOND_MIN_DIST)
             )[0]
         Hbond_graph.add_edges_from( 
-            [ (donor_atoms[idx].get_serial_number(), acceptor_atoms[idx].get_serial_number()) 
+            [ (donor_atoms[idx].get_serial_number(), acceptor_atoms[jdx].get_serial_number()) 
             for jdx in connected_edges 
             if donor_atoms[idx].get_parent() != acceptor_atoms[jdx].get_parent() ], # do not count as H bond if both acceptor and donor are in the same residue
-            color="green", bond_type="pp") 
+            color="green", bond_type="pp", style="solid" ) 
         
     return Hbond_graph
     
@@ -281,6 +282,13 @@ def map_nodes(graph_ref, node_list_ref, graph_align, node_list_align, distance_c
            
     return node_list_ref, node_list_align
 
+
+def get_totally_conserved_waters(Hbond_graph):
+    waters = get_water_nodes(Hbond_graph)
+    freqs = get_attr_from_nodes(Hbond_graph, waters, 'freq')
+    max_freq = max(freqs)
+    return [w for w,f in zip(waters, freqs) if f==max_freq]
+    
     
 def get_graph_centrality_metrics(Hbond_graph_dict):
     """
@@ -319,7 +327,8 @@ def get_colors(Hbond_graph):
     residue_dict = nx.get_node_attributes(Hbond_graph, 'res')
     node_colors = [ type_to_color.get(residue_dict[n], "gray") for n in Hbond_graph.nodes() ]
     edge_colors = [Hbond_graph[u][v]["color"] for u, v in Hbond_graph.edges()]
-    return node_colors, edge_colors
+    edge_styles = [Hbond_graph[u][v]["style"] for u, v in Hbond_graph.edges()]
+    return node_colors, edge_colors, edge_styles
 
 
 def draw_graph_2d(Hbond_graph, ax): 
@@ -334,17 +343,17 @@ def draw_graph_2d(Hbond_graph, ax):
     xy_principal = PCA(n_components=1).fit_transform( xy )
     coordinates_2d = np.hstack(  [xy_principal, z] )
     pos_2d = dict( zip(Hbond_graph.nodes(), coordinates_2d) ) # pair new coordinate back with original node
-    node_colors, edge_colors = get_colors(Hbond_graph)
+    node_colors, edge_colors, edge_styles = get_colors(Hbond_graph)
     
-    nx.draw(Hbond_graph, pos_2d, ax=ax, node_color=node_colors, edge_color=edge_colors, node_size=3)
+    nx.draw(Hbond_graph, pos_2d, ax=ax, node_color=node_colors, edge_color=edge_colors, style=edge_styles, node_size=3)
     
     legend_elements = [     # make a legend for the plot
-    Line2D([0], [0], marker='o', color='w', label='Water', markerfacecolor='blue', markersize=10, alpha=0.2),
-    Line2D([0], [0], marker='o', color='w', label='Donor', markerfacecolor='red', markersize=10, alpha=0.2),
-    Line2D([0], [0], marker='o', color='w', label='Acceptor', markerfacecolor='tomato', markersize=10, alpha=0.2),
-    Line2D([0], [1], linewidth=1, linestyle='-', color='black', label='Water to Water H-bond', alpha=0.2),
-    Line2D([0], [1], linewidth=1, linestyle='-', color='violet', label='Water to Donor/Acceptor H-bond', alpha=0.2),
-    Line2D([0], [1], linewidth=1, linestyle='-', color='green', label='Donor to Acceptor H-bond', alpha=0.2)   
+    Line2D([0], [0], marker='o', color='w', label='Water', markerfacecolor='blue', markersize=10, alpha=0.4),
+    Line2D([0], [0], marker='o', color='w', label='Donor', markerfacecolor='red', markersize=10, alpha=0.4),
+    Line2D([0], [0], marker='o', color='w', label='Acceptor', markerfacecolor='tomato', markersize=10, alpha=0.4),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='black', label='Water to Water H-bond', alpha=0.4),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='violet', label='Water to Donor/Acceptor H-bond', alpha=0.4),
+    Line2D([0], [1], linewidth=1, linestyle='-', color='green', label='Donor to Acceptor H-bond', alpha=0.4)   
     ]
     
     return legend_elements
@@ -387,7 +396,8 @@ def draw_graph_3d(Hbond_graph, ax):
     """
     
     pos = nx.get_node_attributes(Hbond_graph, 'pos')
-    node_colors, edge_colors = get_colors(Hbond_graph)
+    node_colors, edge_colors, edge_styles = get_colors(Hbond_graph)
+    edge_styles = ['--' if s=='dashed' else '-' for s in edge_styles ]
     
     # Plot nodes
     # List comprehension gives a list of (x,y,z) coordinates and zip(*([])) transposes them to the format for matplotlib
@@ -397,15 +407,15 @@ def draw_graph_3d(Hbond_graph, ax):
     # Plot edges
     for idx, (u,v) in enumerate(Hbond_graph.edges()):
         x, y, z = zip(pos[u],pos[v])
-        ax.plot(x, y, z, color=edge_colors[idx], alpha=0.4)
+        ax.plot(x, y, z, edge_styles[idx], color=edge_colors[idx], alpha=0.4)
         
     legend_elements = [     # make a legend for the plot
-        Line2D([0], [0], marker='o', color='w', label='Water', markerfacecolor='blue', markersize=10, alpha=0.2),
-        Line2D([0], [0], marker='o', color='w', label='Donor', markerfacecolor='red', markersize=10, alpha=0.2),
-        Line2D([0], [0], marker='o', color='w', label='Acceptor', markerfacecolor='tomato', markersize=10, alpha=0.2),
-        Line2D([0], [1], linewidth=1, linestyle='-', color='black', label='Water to Water H-bond', alpha=0.2),
-        Line2D([0], [1], linewidth=1, linestyle='-', color='violet', label='Water to Donor/Acceptor H-bond', alpha=0.2),
-        Line2D([0], [1], linewidth=1, linestyle='-', color='green', label='Donor to Acceptor H-bond', alpha=0.2)   
+        Line2D([0], [0], marker='o', color='w', label='Water', markerfacecolor='blue', markersize=10, alpha=0.4),
+        Line2D([0], [0], marker='o', color='w', label='Donor', markerfacecolor='red', markersize=10, alpha=0.4),
+        Line2D([0], [0], marker='o', color='w', label='Acceptor', markerfacecolor='tomato', markersize=10, alpha=0.4),
+        Line2D([0], [1], linewidth=1, linestyle='-', color='black', label='Water to Water H-bond', alpha=0.4),
+        Line2D([0], [1], linewidth=1, linestyle='-', color='violet', label='Water to Donor/Acceptor H-bond', alpha=0.4),
+        Line2D([0], [1], linewidth=1, linestyle='-', color='green', label='Donor to Acceptor H-bond', alpha=0.4)   
     ]
     
     return legend_elements
@@ -529,30 +539,30 @@ Identify conserved waters.
 """
 distance_cutoff = HBOND_MAX_DIST/2 # max distance for two waters to map together, estimated by inflection point in number of water pairs as a function of this distance, leaves 37 waters conserved in all structures
     
-# loop through all proteins and find the mappable waters
 lig_similarities = []
 water_similarities = []
-num_ligands = len(all_prots)-1
-tanimoto_distance_matrix = np.zeros([num_ligands, num_ligands])
-for idx, ref_prot in enumerate(all_prots[1:-1]): 
-    # ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
-    mol_ref = residue_to_mol(ligands[ref_prot])
-    for jdx, test_prot in enumerate(all_prots[idx+1:]):
-        # print(f"Mapping waters for {ref_prot} and {test_prot}")
-        # test_waters = get_water_nodes(Hbond_graphs[test_prot])
-        # ref_waters_mapped, test_waters_mapped = map_nodes(Hbond_graphs[ref_prot], ref_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)
 
-        # for w in ref_waters_mapped:
-            # Hbond_graphs[ref_prot].nodes()[w]['freq'] += 1
-        # for w in test_waters_mapped:
-            # Hbond_graphs[test_prot].nodes()[w]['freq'] += 1
+# loop through all pairs of proteins and find the mappable waters, calculate tanimoto similarity metrics
+for idx, ref_prot in enumerate(all_prots[:-1]): 
+    ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
+    mol_ref = residue_to_mol(ligands[ref_prot])
+    print(f"Mapping waters for {ref_prot}")
+    
+    # only compute for those further down the list due to symmetry
+    for jdx, test_prot in enumerate(all_prots[idx+1:]): 
+        test_waters = get_water_nodes(Hbond_graphs[test_prot])
+        ref_waters_mapped, test_waters_mapped = map_nodes(Hbond_graphs[ref_prot], ref_waters, Hbond_graphs[test_prot], test_waters, distance_cutoff)
+
+        # update the freq trait based on mapping
+        for w in ref_waters_mapped:
+            Hbond_graphs[ref_prot].nodes()[w]['freq'] += 1
+        for w in test_waters_mapped:
+            Hbond_graphs[test_prot].nodes()[w]['freq'] += 1
             
-        if apo_prot in [ref_prot, test_prot]: continue # do not compare ligands for apo structure
+        # if ref_prot == apo_prot: continue # do not compare ligands for apo structure
         
-        mol_test = residue_to_mol(ligands[test_prot])
-        chem_tanimoto = tanimoto_similarity(mol_ref, mol_test)
-        tanimoto_distance_matrix[idx, idx+jdx] = 1 - chem_tanimoto
-        tanimoto_distance_matrix[idx+jdx, idx] = 1 - chem_tanimoto
+        # mol_test = residue_to_mol(ligands[test_prot])
+        # chem_tanimoto = tanimoto_similarity(mol_ref, mol_test)
         # lig_similarities.append(chem_tanimoto)      
         
         # # calculate the tanimoto = union / intersection of the water atoms
@@ -560,54 +570,29 @@ for idx, ref_prot in enumerate(all_prots[1:-1]):
         # water_similarities.append( bit_tanimoto )
        
             
-    # # output a new pdb with the freq count in the b-factor column to visualize in pymol
+    # output a new pdb with the freq count in the b-factor column to visualize in pymol
     # edit_b_factor( input_file = f"{DATA_FOLDER}{ref_prot}_final.pdb", 
         # output_file = f"{DATA_FOLDER}/all_proteins_edited/{ref_prot}_edited.pdb", 
         # b_factor_dict = nx.get_node_attributes(Hbond_graphs[ref_prot], 'freq') )
 
 
-print(tanimoto_distance_matrix)
-db = DBSCAN(eps=0.4, min_samples=2, metric='precomputed')
-labels = db.fit_predict(tanimoto_distance_matrix)
-colors = [f"C{l+1}" for l in labels]
-print("DBSCAN clusters:", dict(zip(all_prots[1:], labels)))
-
-
-# project to 2D using MDS
-mds = MDS(n_components=2, dissimilarity='precomputed', random_state=42, normalized_stress='auto')
-coords = mds.fit_transform(tanimoto_distance_matrix)
-
-# plot with labels
-plt.figure(figsize=(8, 6))
-plt.scatter(coords[:, 0], coords[:, 1], color=colors, edgecolor='black', s=100)
-
-for i, name in enumerate(all_prots[1:]):
-    plt.text(coords[i, 0]+0.02, coords[i, 1]+0.02, name, fontsize=12)
-
-plt.title("Ligand Projection via Tanimoto Distance (MDS)")
-plt.xlabel("MDS Dimension 1")
-plt.ylabel("MDS Dimension 2")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-
-
-
+"""
+Plot ligand and water tanimoto similarity metrics for pairwise comparison.
+"""
+# coeff, pval = spearmanr(lig_similarities, water_similarities)
 # plt.scatter(lig_similarities, water_similarities, s=10)
+
 # plt.xlabel("Tanimoto similarity between ligands")
 # plt.xlim([0,1])
 # plt.ylabel("Tanimoto similarity between conserved waters")
 # plt.ylim([0,1])
 # plt.title(f"All pairs")
-# plt.show()   
 
+# custom_labels = [f"Spearman correlation: {coeff:.3f}", f"p-value: {pval:.3e}"]
+# legend_handles = [Line2D([0], [0], color='none') for _ in custom_labels]
+# plt.legend(legend_handles, custom_labels, loc='upper left', frameon=False)
 
-# TODO count unique waters
-# all_water_freqs = np.concatenate( [get_attr_from_nodes(Hbond_graphs[prot], get_water_nodes(Hbond_graphs[prot]), 'freq') for prot in all_prots] )
-# water_freq, water_freq_count = np.unique(all_water_freqs, return_counts=True)
-# water_freq_count = np.ceil( water_freq_count / (1 + water_freq) ) # round up in case some clusters aren't strongly connected
-# unique_water_count = sum( water_freq_count )
-       
+# plt.show()       
 
    
 """
@@ -621,21 +606,63 @@ Get graph metrics.
 
 
 """
-Display hydrogen bonding network for the apo and one holo protein.
+Display hydrogen bonding network for a set of proteins.
 """  
-  
-# prots = [apo_prot]
-# num_prots = len(prots)
+other_prot = '3QTW'
+prots = [apo_prot, other_prot]
+num_prots = len(prots)
 # fig  = plt.figure( figsize=(num_prots * 7, 6) )
-# axs = [ fig.add_subplot(1, num_prots, i+1, projection='3d') for i in range(num_prots) ]
+# axs = [ fig.add_subplot(1, num_prots, i+1) for i in range(num_prots) ]
+# # axs = [ fig.add_subplot(1, num_prots, i+1, projection='3d') for i in range(num_prots) ]
 
 # for prot, ax in zip(prots, axs):
     # ax.set_title(f"{prot}")  
+    # subnodes = get_protein_nodes(Hbond_graphs[prot]) + get_totally_conserved_waters(Hbond_graphs[prot])
     # legend_elements = []
-    # legend_elements += draw_graph_3d(Hbond_graphs[prot].subgraph(common_waters), ax) # plot graph        
-    # legend_elements += plot_backbone_3d(backbone_coordinates[prot], ax, SS_POSITIONS) # plot backbone
+    # legend_elements += draw_graph_2d(Hbond_graphs[prot].subgraph(subnodes), ax) # plot graph        
+    # legend_elements += plot_backbone_2d(backbone_coordinates[prot], ax, SS_POSITIONS) # plot backbone
 
 # axs[-1].legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.2, 1), title="Graph elements")
 # plt.tight_layout()
 # plt.show()
 
+
+# TODO verify graph difference 
+subnodes1 = get_protein_nodes(Hbond_graphs[apo_prot]) + get_totally_conserved_waters(Hbond_graphs[apo_prot])
+G1 = Hbond_graphs[apo_prot].subgraph(subnodes1)
+subnodes2 = get_protein_nodes(Hbond_graphs[other_prot]) + get_totally_conserved_waters(Hbond_graphs[other_prot]) 
+G2 = Hbond_graphs[other_prot].subgraph(subnodes2)
+
+# map and relabel nodes
+subnodes1, subnodes2 = map_nodes(G1, subnodes1, G2, subnodes2, distance_cutoff=100)
+G2 = nx.relabel_nodes( G2, dict(zip( subnodes2, subnodes1 )) )
+
+# calculate difference and restore properties
+# node position, residue. edge color
+diff = nx.symmetric_difference(G1, G2)
+for n in diff.nodes:
+    diff.nodes[n].update(G1.nodes[n])
+
+bonds_broken = 0    
+bonds_formed = 0    
+for u, v in diff.edges:
+    if G1.has_edge(u, v):
+        diff.edges[u, v].update(G1.edges[u, v])
+        diff.edges[u, v]['style'] = 'dashed'
+        bonds_broken += 1
+    else:
+        diff.edges[u, v].update(G2.edges[u, v])
+        bonds_formed += 1
+
+fig = plt.figure( figsize=(12,6) )
+ax = fig.add_subplot(1, 1, 1, projection='3d')
+legend_elements = draw_graph_3d(diff, ax) # plot graph        
+legend_elements += [    
+        Line2D([0], [1], linewidth=1, linestyle='--', color='orange', label=f'Bonds broken {bonds_broken}', alpha=0.4),
+        Line2D([0], [1], linewidth=1, linestyle='-', color='orange', label=f'Bonds formed {bonds_formed}', alpha=0.4),
+]
+
+ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1), title="Graph elements")
+plt.title(f"Symmetric difference between Hbond graphs of {apo_prot} and {other_prot}") 
+plt.tight_layout()
+plt.show()
