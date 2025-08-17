@@ -578,8 +578,8 @@ lig_dissimilarities = np.zeros([num_prot-1, num_prot-1])
 water_dissimilarities = np.zeros_like(lig_dissimilarities)
 
 # downloading the ligands takes a while, so do all at once only once
+print("Downloading ligand molecules")
 ligands = {prot: residue_to_mol(res) for prot, res in ligands.items()}
-print("Finished downloading ligands molecules")
 
 # +1 indexing since the ligand matrices have one less structure (apo) than the 
 for idx, ref_prot in enumerate(all_prots[1:]): 
@@ -602,6 +602,38 @@ for idx, ref_prot in enumerate(all_prots[1:]):
         water_dissimilarities[idx, jdx] = water_dissimilarity 
 
 
+db = DBSCAN(eps=0.4, min_samples=2, metric='precomputed')
+labels = db.fit_predict(lig_dissimilarities)
+colors = [f"C{l+1}" for l in labels]
+print("DBSCAN clusters:", dict(zip(all_prots[1:], labels)))
+
+# project to 2D using MDS
+mds = MDS(n_components=2, dissimilarity='precomputed', random_state=42, normalized_stress='auto')
+coords_lig = mds.fit_transform(lig_dissimilarities)
+coords_water = mds.fit_transform(water_dissimilarities)
+
+# plot with labels
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), sharex=True, sharey=True)
+ax1.scatter(coords_lig[:, 0], coords_lig[:, 1], color=colors, edgecolor='black', s=100)
+ax2.scatter(coords_water[:, 0], coords_water[:, 1], color=colors, edgecolor='black', s=100)
+
+for i, name in enumerate(all_prots[1:]):
+    ax1.text(coords_lig[i, 0]+0.02, coords_lig[i, 1]+0.02, name, fontsize=12)
+    ax2.text(coords_water[i, 0]+0.02, coords_water[i, 1]+0.02, name, fontsize=12)
+
+ax1.set_title("Ligand Projection via Ligand Tanimoto Distance (MDS)")
+ax2.set_title("Ligand Projection via Water Map Tanimoto Distance (MDS)")
+ax1.set_xlabel("MDS Dimension 1")
+ax2.set_xlabel("MDS Dimension 1")
+ax1.set_ylabel("MDS Dimension 2")
+ax1.grid(True)
+ax2.grid(True)
+plt.tight_layout()
+plt.show()
+
+sys.exit()
+
+
 """
 Plot ligand and water tanimoto dissimilarity metrics for pairwise comparison.
 """
@@ -621,9 +653,6 @@ legend_handles = [Line2D([0], [0], color='none') for _ in custom_labels]
 plt.legend(legend_handles, custom_labels, loc='upper left', frameon=False)
 
 plt.show()       
-sys.exit()
-   
-   
    
    
 """
