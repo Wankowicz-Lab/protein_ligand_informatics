@@ -46,6 +46,7 @@ DEFAULT_ACCEPTOR_ATOMS = ['ND1', 'NE2', 'O', 'OD1', 'OD2', 'OE1', 'OE2', 'OG', '
 
 # CONSTANTS FOR THIS PROJECT (change based on protein)
 DATA_FOLDER = "../PDB_Data_cdk2/cdk2_original/"
+NUM_RES = 298
 OTHER_SOLVENT=["EDO","PO4"] # constructed by looking through all non WATER + AA or ligand labels
 SS_POSITIONS= [ (4,12), (17,23), (29,35), (45,56), (66,72), (75,81),
         (85,94), (100,121), (129,131), (133,135), (141,143), (147,152), (170,175),
@@ -116,6 +117,26 @@ def get_ligand_residue(pdb_structure):
                 hetflag = res.get_id()[0]
                 if hetflag != ' ' and resname not in WATER + OTHER_SOLVENT:
                     return res
+
+
+def b_factor_by_residue(pdb_structure, normalize=True):
+    """
+    https://pubs.acs.org/doi/pdf/10.1021/acs.chemrev.8b00290?ref=article_openPDF section 2.1 for method
+    """
+    average_b_factor = {}
+    for model in pdb_structure:
+        for chain in model:
+            for res in chain:
+                if res.resname not in AA: continue
+                avg_b = np.mean( [a.get_bfactor() for a in res] )
+                average_b_factor[ res.get_id()[1] ] = avg_b
+    
+    if normalize:
+        med = np.median( list(average_b_factor.values()) )
+        average_b_factor = {res:b/med - 1 for res, b in average_b_factor.items()}
+    
+    return average_b_factor
+    
 
 
 def residue_to_mol(residue):
@@ -223,6 +244,7 @@ def graph_from_atom_sets(water_atoms, donor_atoms, acceptor_atoms, translation=N
             for jdx in connected_edges ],
             color="violet", bond_type="wp", style="solid" )
         
+    # TODO maybe add geometry condition here for increased accuracy? 90 deg or 120 deg angle 
     for idx, donor in enumerate(donor_coordinates): # donor to acceptor, intra-molecular
         d_tag = ("d", donor_atoms[idx].get_parent().get_id()[1], donor_atoms[idx].name)
         
@@ -300,7 +322,8 @@ def map_nodes(graph_ref, node_list_ref, graph_align, node_list_align, distance_c
 
 
 def get_totally_conserved_waters(Hbond_graph):
-    freqs = get_attr_from_nodes(Hbond_graph, 'water', 'freq')
+    waters = get_water_nodes(Hbond_graph)
+    freqs = get_attr_from_nodes(Hbond_graph, waters, 'freq')
     max_freq = max(freqs)
     return [w for w,f in zip(waters, freqs) if f==max_freq]
     
@@ -510,17 +533,17 @@ pdb_files = list(pdb_path.glob('*_final.pdb'))
 parser = PDB.PDBParser(QUIET=True)
 
 apo_prot = '1PW2'
+all_prots = []
 Hbond_graphs = {}
 backbone_coordinates = {}
 ligands = {}
-all_prots = []
-
+    
+print(f"Parsing pdb files")
 for idx, file_name in enumerate(pdb_files):
     prot = file_name.stem.split('_')[0]
-    print(f"Parsing pdb file for {prot}")
     all_prots.append(prot)
     structure = parser.get_structure(prot, file_name)
-    
+
     ligand = get_ligand_residue(structure)
     ligands[prot] = ligand
     
@@ -551,11 +574,10 @@ distance_cutoff = HBOND_MAX_DIST/2 # max distance for two waters to map together
 num_prot = len(all_prots)
 mapped_water_counts = np.zeros([num_prot, num_prot])
 
-
+print(f"Mapping waters")
 # loop through all pairs of proteins and find the mappable waters
 for idx, ref_prot in enumerate(all_prots): 
     ref_waters = get_water_nodes(Hbond_graphs[ref_prot])
-    print(f"Mapping waters for {ref_prot}")
     
     for jdx, test_prot in enumerate(all_prots): 
         test_waters = get_water_nodes(Hbond_graphs[test_prot])
@@ -573,141 +595,106 @@ for idx, ref_prot in enumerate(all_prots):
         # b_factor_dict = nx.get_node_attributes(Hbond_graphs[ref_prot], 'freq') )
 
 
-# calculate tanimoto dissimilarity metrics 
-lig_dissimilarities = np.zeros([num_prot-1, num_prot-1])
-water_dissimilarities = np.zeros_like(lig_dissimilarities)
+# # calculate tanimoto dissimilarity metrics 
+# lig_dissimilarities = np.zeros([num_prot-1, num_prot-1])
+# water_dissimilarities = np.zeros_like(lig_dissimilarities)
 
-# downloading the ligands takes a while, so do all at once only once
-print("Downloading ligand molecules")
-ligands = {prot: residue_to_mol(res) for prot, res in ligands.items()}
+# # downloading the ligands takes a while, so do all at once only once
+# print("Downloading ligand molecules")
+# ligands = {prot: residue_to_mol(res) for prot, res in ligands.items()}
 
-# +1 indexing since the ligand matrices have one less structure (apo) than the 
-for idx, ref_prot in enumerate(all_prots[1:]): 
-    mol_ref = ligands[ref_prot]
-    print(f"Comparing ligands for {ref_prot}")
+# # +1 indexing since the ligand matrices have one less structure (apo) than the 
+# for idx, ref_prot in enumerate(all_prots[1:]): 
+    # mol_ref = ligands[ref_prot]
+    # print(f"Comparing ligands for {ref_prot}")
 
-    for jdx, test_prot in enumerate(all_prots[1:]): 
-        if ref_prot == test_prot: continue # do not map to self
-        mol_test = ligands[test_prot]
+    # for jdx, test_prot in enumerate(all_prots[1:]): 
+        # if ref_prot == test_prot: continue # do not map to self
+        # mol_test = ligands[test_prot]
         
-        chem_dissimilarity = tanimoto_dissimilarity(mol_ref, mol_test)
-        lig_dissimilarities[idx, jdx] = chem_dissimilarity
+        # chem_dissimilarity = tanimoto_dissimilarity(mol_ref, mol_test)
+        # lig_dissimilarities[idx, jdx] = chem_dissimilarity
         
-        # calculate the tanimoto = |intersection| / |union| of water atoms that can be mapped to at least one other structure
-        total_ref_waters = np.sum( np.array(get_attr_from_nodes(Hbond_graphs[ref_prot], 'water', "freq")) > 1 )
-        total_test_waters = np.sum( np.array(get_attr_from_nodes(Hbond_graphs[test_prot], 'water', "freq")) > 1 )
-        mapped_waters = mapped_water_counts[idx+1, jdx+1] 
+        # # calculate the tanimoto = |intersection| / |union| of water atoms that can be mapped to at least one other structure
+        # total_ref_waters = np.sum( np.array(get_attr_from_nodes(Hbond_graphs[ref_prot], 'water', "freq")) > 1 )
+        # total_test_waters = np.sum( np.array(get_attr_from_nodes(Hbond_graphs[test_prot], 'water', "freq")) > 1 )
+        # mapped_waters = mapped_water_counts[idx+1, jdx+1] 
         
-        water_dissimilarity = 1 - ( mapped_waters / ( total_ref_waters + total_test_waters - mapped_waters ) )
-        water_dissimilarities[idx, jdx] = water_dissimilarity 
+        # water_dissimilarity = 1 - ( mapped_waters / ( total_ref_waters + total_test_waters - mapped_waters ) )
+        # water_dissimilarities[idx, jdx] = water_dissimilarity 
 
 
-db = DBSCAN(eps=0.4, min_samples=2, metric='precomputed')
-labels = db.fit_predict(lig_dissimilarities)
-colors = [f"C{l+1}" for l in labels]
-print("DBSCAN clusters:", dict(zip(all_prots[1:], labels)))
+Hbonded_residues = []
+for other_prot in all_prots:
+    w1 = get_totally_conserved_waters(Hbond_graphs[apo_prot])
+    for w in w1:
+        Hbonded_residues += [target[1] for _, target in Hbond_graphs[apo_prot].edges(w) if target[0] != 'w' ]
+        
+res_num, count = np.unique(Hbonded_residues, return_counts = True)
+ind = np.argsort(count)[::-1]
+res_num, count = res_num[ind], count[ind]
 
-# project to 2D using MDS
-mds = MDS(n_components=2, dissimilarity='precomputed', random_state=42, normalized_stress='auto')
-coords_lig = mds.fit_transform(lig_dissimilarities)
-coords_water = mds.fit_transform(water_dissimilarities)
 
-# plot with labels
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), sharex=True, sharey=True)
-ax1.scatter(coords_lig[:, 0], coords_lig[:, 1], color=colors, edgecolor='black', s=100)
-ax2.scatter(coords_water[:, 0], coords_water[:, 1], color=colors, edgecolor='black', s=100)
+structure = parser.get_structure(prot, pdb_files[0])
+bfactors = b_factor_by_residue(structure, normalize=False)
+diffs = []
+for r in res_num:
+    for it in range(r-5, r+6):
+        if it in res_num or it not in bfactors.keys(): continue
+        diffs.append(bfactors[r] - bfactors[it])
 
-for i, name in enumerate(all_prots[1:]):
-    ax1.text(coords_lig[i, 0]+0.02, coords_lig[i, 1]+0.02, name, fontsize=12)
-    ax2.text(coords_water[i, 0]+0.02, coords_water[i, 1]+0.02, name, fontsize=12)
+fig, ax = plt.subplots(figsize=(8,6))
+box = ax.boxplot(diffs, positions=[1,], widths=0.6, patch_artist=True, zorder=2)
 
-ax1.set_title("Ligand Projection via Ligand Tanimoto Distance (MDS)")
-ax2.set_title("Ligand Projection via Water Map Tanimoto Distance (MDS)")
-ax1.set_xlabel("MDS Dimension 1")
-ax2.set_xlabel("MDS Dimension 1")
-ax1.set_ylabel("MDS Dimension 2")
-ax1.grid(True)
-ax2.grid(True)
+for patch in box['boxes']:
+    patch.set_alpha(0.5)  # Set transparency
+
+# Overlay individual points (jittered for visibility)
+x = np.random.normal(loc=1, scale=0.05, size=len(diffs))  # jitter
+ax.plot(x, diffs, 'o', c="C1", zorder=1)
+
+# Customize plot
+ax.set_xticks([1])
+ax.set_xticklabels(['Residues near conserved water'])
+ax.set_ylabel('Difference in b-factor')
+ax.set_title('10 neighbors')
+
 plt.tight_layout()
 plt.show()
 
+
 sys.exit()
-
-
-"""
-Plot ligand and water tanimoto dissimilarity metrics for pairwise comparison.
-"""
-spearmanr_coeff, mantel_pvalue, n = mantel(lig_dissimilarities, water_dissimilarities, method='spearman', permutations=1000)
-scatter_ind = np.triu_indices_from(lig_dissimilarities, k=1)
-print(lig_dissimilarities[scatter_ind])
-plt.scatter(lig_dissimilarities[scatter_ind], water_dissimilarities[scatter_ind], s=10)
-
-plt.xlabel("Tanimoto dissimilarity between ligands")
-plt.xlim([0,1])
-plt.ylabel("Tanimoto dissimilarity between conserved waters")
-plt.ylim([0,1])
-plt.title(f"All pairs")
-
-custom_labels = [f"Spearman correlation: {spearmanr_coeff:.3f}", f"Mantel test p-value: {mantel_pvalue:.4f}"]
-legend_handles = [Line2D([0], [0], color='none') for _ in custom_labels]
-plt.legend(legend_handles, custom_labels, loc='upper left', frameon=False)
-
-plt.show()       
-   
    
 """
-Calculate graph difference for a set of proteins.
+Calculate graph difference for the set of proteins.
 """  
 
-# Write to CSV
-with open('../Figures/apo_to_holo_Hbond_change_comparison.csv', 'w', newline='') as f:
-    f.write("# Using the set of totally conserved waters and the protein Hbond donors/acceptors"
-        "find the difference in the Hbond graph between the apo structure and a ligand bound structure.\n")  # comment
-    writer = csv.writer(f)
-    writer.writerow(['PDB', 'protein-protein broken', 'water-protein broken', 'protein-protein formed', 'water-protein formed'])  # header
+for other_prot in all_prots[1:]:
+    w1 = get_water_nodes(Hbond_graphs[apo_prot])
+    w2 = get_water_nodes(Hbond_graphs[other_prot]) 
     
-    for other_prot in all_prots[1:]:
-
-        w1 = get_water_nodes(Hbond_graphs[apo_prot])
-        w2 = get_water_nodes(Hbond_graphs[other_prot]) 
-        # remap all nodes since 1:1
-        w1, w2 = map_nodes(Hbond_graphs[apo_prot], w1, Hbond_graphs[other_prot], w2, distance_cutoff=distance_cutoff) 
-        subnodes1 = get_protein_nodes(Hbond_graphs[apo_prot]) + w1
-        subnodes2 = get_protein_nodes(Hbond_graphs[other_prot]) + w2
-        G1 = Hbond_graphs[apo_prot].subgraph(subnodes1)
-        G2 = Hbond_graphs[other_prot].subgraph(subnodes2)
+    # remap water nodes to make node sets equivalent
+    w1, w2 = map_nodes(Hbond_graphs[apo_prot], w1, Hbond_graphs[other_prot], w2, distance_cutoff=distance_cutoff) 
+    subnodes1 = get_protein_nodes(Hbond_graphs[apo_prot]) + w1
+    subnodes2 = get_protein_nodes(Hbond_graphs[other_prot]) + w2
+    G1 = Hbond_graphs[apo_prot].subgraph(subnodes1)
+    G2 = Hbond_graphs[other_prot].subgraph(subnodes2)
+    
+    # map and relabel nodes
+    G2 = nx.relabel_nodes( G2, dict(zip( w2, w1 )) )        
+    
+    # calculate difference and restore properties
+    diff = nx.symmetric_difference(G1, G2)
+    
+    for n in diff.nodes:
+        diff.nodes[n].update(G1.nodes[n])
         
-        # map and relabel nodes
-        G2 = nx.relabel_nodes( G2, dict(zip( w2, w1 )) )        
-        
-        # calculate difference and restore properties
-        diff = nx.symmetric_difference(G1, G2)
-        
-        for n in diff.nodes:
-            diff.nodes[n].update(G1.nodes[n])
-
-        pp_bonds_broken = 0    
-        wp_bonds_broken = 0    
-        pp_bonds_formed = 0    
-        wp_bonds_formed = 0    
-        for u, v in diff.edges:
-            if G1.has_edge(u, v):
-                diff.edges[u, v].update(G1.edges[u, v])
-                diff.edges[u, v]['style'] = 'dashed'
-                if diff.edges[u,v]['bond_type'] == 'pp':
-                    pp_bonds_broken += 1
-                elif diff.edges[u,v]['bond_type'] == 'wp':
-                    wp_bonds_broken += 1
-            else:
-                diff.edges[u, v].update(G2.edges[u, v])
-                if diff.edges[u,v]['bond_type'] == 'pp':
-                    pp_bonds_formed += 1
-                elif diff.edges[u,v]['bond_type'] == 'wp':
-                    wp_bonds_formed += 1
-           
-        writer.writerow([other_prot, pp_bonds_broken, wp_bonds_broken, pp_bonds_formed, wp_bonds_formed])
-
-
+    for u, v in diff.edges:            
+        if G1.has_edge(u, v):
+            diff.edges[u, v].update(G1.edges[u, v])
+            diff.edges[u, v]['style'] = 'dashed'
+        else:
+            diff.edges[u, v].update(G2.edges[u, v])
 
 
 """
@@ -744,15 +731,15 @@ Plot in 3D
 """
 Plot in 2D
 """
-fig, ax  = plt.subplots( figsize=(12, 6) )
+# fig, ax  = plt.subplots( figsize=(12, 6) )
 
-legend_elements = draw_graph_2d(diff, ax) # plot graph        
-# legend_elements += plot_backbone_2d(backbone_coordinates[other_prot], ax, SS_POSITIONS) # plot backbone
-legend_elements += [    
-        Line2D([0], [1], linewidth=1, linestyle='--', color='orange', label=f'Bonds broken', alpha=0.4),
-        Line2D([0], [1], linewidth=1, linestyle='-', color='orange', label=f'Bonds formed', alpha=0.4),
-]
-ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1), title="Graph elements")
-plt.title(f"Symmetric difference between Hbond graphs of {apo_prot} and {other_prot}") 
-plt.tight_layout()
-plt.show()
+# legend_elements = draw_graph_2d(diff, ax) # plot graph        
+# # legend_elements += plot_backbone_2d(backbone_coordinates[other_prot], ax, SS_POSITIONS) # plot backbone
+# legend_elements += [    
+        # Line2D([0], [1], linewidth=1, linestyle='--', color='orange', label=f'Bonds broken', alpha=0.4),
+        # Line2D([0], [1], linewidth=1, linestyle='-', color='orange', label=f'Bonds formed', alpha=0.4),
+# ]
+# ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1), title="Graph elements")
+# plt.title(f"Symmetric difference between Hbond graphs of {apo_prot} and {other_prot}") 
+# plt.tight_layout()
+# plt.show()
