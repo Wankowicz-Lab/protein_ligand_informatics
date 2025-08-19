@@ -624,47 +624,40 @@ for idx, ref_prot in enumerate(all_prots):
         # water_dissimilarities[idx, jdx] = water_dissimilarity 
 
 
-Hbonded_residues = []
-for other_prot in all_prots:
-    w1 = get_totally_conserved_waters(Hbond_graphs[apo_prot])
-    for w in w1:
-        Hbonded_residues += [target[1] for _, target in Hbond_graphs[apo_prot].edges(w) if target[0] != 'w' ]
-        
-res_num, count = np.unique(Hbonded_residues, return_counts = True)
-ind = np.argsort(count)[::-1]
-res_num, count = res_num[ind], count[ind]
+# Aggregate waters over all structures, get conservation level of water, compare to number of H bonds to protein
+num_neighbors_dict = {i+1:[] for i in range(num_prot)}
+for prot in all_prots:
+    waters = get_water_nodes(Hbond_graphs[prot])
+    freqs = get_attr_from_nodes(Hbond_graphs[prot], waters, 'freq')
+    for w, f in zip(waters, freqs):
+        num_bonds = len( [_ for _, target in Hbond_graphs[prot].edges(w) if target[0] != 'w'] )
+        num_neighbors_dict[f].append(num_bonds)
 
+means = {k:np.mean(v) for k, v in num_neighbors_dict.items()}
 
-structure = parser.get_structure(prot, pdb_files[0])
-bfactors = b_factor_by_residue(structure, normalize=False)
-diffs = []
-for r in res_num:
-    for it in range(r-5, r+6):
-        if it in res_num or it not in bfactors.keys(): continue
-        diffs.append(bfactors[r] - bfactors[it])
+# Create bar plot
+fig, ax = plt.subplots(figsize=(12, 6))
+bars = ax.bar(means.keys(), means.values(), alpha=0.7)
 
-fig, ax = plt.subplots(figsize=(8,6))
-box = ax.boxplot(diffs, positions=[1,], widths=0.6, patch_artist=True, zorder=2)
-
-for patch in box['boxes']:
-    patch.set_alpha(0.5)  # Set transparency
-
-# Overlay individual points (jittered for visibility)
-x = np.random.normal(loc=1, scale=0.05, size=len(diffs))  # jitter
-ax.plot(x, diffs, 'o', c="C1", zorder=1)
+# Annotate bars with values
+for bar in bars:
+    height = bar.get_height()
+    ax.text(bar.get_x() + bar.get_width()/2, height + 0.05, f'{height:.1f}',
+            ha='center', va='bottom', fontsize=10)
 
 # Customize plot
-ax.set_xticks([1])
-ax.set_xticklabels(['Residues near conserved water'])
-ax.set_ylabel('Difference in b-factor')
-ax.set_title('10 neighbors')
+ax.set_xlabel('Frequency of water')
+ax.set_xlim([0.5,21.5])
+ax.set_xticks(np.linspace(1,21,21))
+ax.set_ylim([0,3])
+ax.set_ylabel('Average number of H-bonds with protein')
 
 plt.tight_layout()
 plt.show()
 
-
 sys.exit()
-   
+
+  
 """
 Calculate graph difference for the set of proteins.
 """  
