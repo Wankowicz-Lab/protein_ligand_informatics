@@ -1,0 +1,26 @@
+util.mass_align("1PW2",0,_self=cmd)
+delete aln_all_to_1PW2
+cmd.color("green", 'all') 
+
+select water, pepseq O
+cmd.color_deep("blue", 'water', 0)
+extract waters, water
+delete water
+
+select hinge, pepseq FEFLH
+cmd.color_deep("red", 'hinge', 0)
+
+select activation, resi 145-172
+cmd.color_deep("cyan", 'activation', 0)
+
+remove resn EDO or resn PO4
+
+select ligand, not (pepseq O or polymer.protein)
+cmd.color_deep("purple", 'ligand', 0)
+extract ligands, ligand
+delete ligand
+
+set sphere_scale, 0.3
+cmd.show_as("spheres", "water")
+
+spectrum b, white_red, minimum=0, maximum=63, selection=waters
