@@ -7,7 +7,7 @@ import numpy as np
 from scipy import stats
 
 def get_kinase_waters():
-    with open('/dors/wankowicz_lab/ellas/allNonKinaseWaters.json', 'r') as f: # [ { PDB, waters: [] } ]
+    with open('/.../allNonKinaseWaters.json', 'r') as f: # [ { PDB, waters: [] } ]
         kinase_waters = json.load(f)
     return kinase_waters
 
