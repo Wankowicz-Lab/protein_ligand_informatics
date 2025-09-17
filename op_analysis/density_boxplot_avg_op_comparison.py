@@ -4,27 +4,75 @@ import seaborn as sns
 from scipy.stats import mannwhitneyu
 
 # === File paths ===
-binding_csv = "/.../single_uniprot_dataset_binding_op.csv"
-nonbinding_csv = "/.../single_uniprot_dataset_nonbinding_op.csv"
-output_path = "/.../main_dataset/figures"
+binding_csv = "/.../main_dataset_binding_op.csv"
+nonbinding_csv = "/.../main_dataset_nonbinding_op.csv"
+output_path = "/.../results"
 
 # === Load data ===
 df_binding = pd.read_csv(binding_csv)
 df_nonbinding = pd.read_csv(nonbinding_csv)
 
-# === Compute average s2calc per pdb_id ===
-binding_avg = df_binding.groupby('pdb_id')['s2calc'].mean().reset_index()
-binding_avg.columns = ['pdb_id', 'avg_s2calc_binding']
+# === Compute average s2calc per pdb_id and chain (per pocket) ===
+binding_avg = df_binding.groupby(['pdb_id', 'chain'])['s2calc'].mean().reset_index()
+binding_avg.columns = ['pdb_id', 'chain', 'avg_s2calc_binding']
 
-nonbinding_avg = df_nonbinding.groupby('pdb_id')['s2calc'].mean().reset_index()
-nonbinding_avg.columns = ['pdb_id', 'avg_s2calc_nonbinding']
+nonbinding_avg = df_nonbinding.groupby(['pdb_id', 'chain'])['s2calc'].mean().reset_index()
+nonbinding_avg.columns = ['pdb_id', 'chain', 'avg_s2calc_nonbinding']
 
 # === Merge for paired plot ===
-merged = pd.merge(binding_avg, nonbinding_avg, on='pdb_id')
+merged = pd.merge(binding_avg, nonbinding_avg, on=['pdb_id', 'chain'])
 merged['delta_s2calc'] = merged['avg_s2calc_binding'] - merged['avg_s2calc_nonbinding']
 
+# === Statistical Test (Mann–Whitney U test) ===
+u_stat, p_value = mannwhitneyu(
+    merged['avg_s2calc_binding'],
+    merged['avg_s2calc_nonbinding'],
+    alternative='two-sided'
+)
+
+# === Save Mann–Whitney U Test Results ===
+mwu_results = f"=== Mann–Whitney U Test (Binding vs Non-binding) ===\n"
+mwu_results += f"U statistic: {u_stat:.3f}\n"
+mwu_results += f"P-value: {p_value}\n"
+
+with open(f"{output_path}/mwu_test_results.txt", "w") as f:
+    f.write(mwu_results)
+
+print(f"=== Mann–Whitney U Test (Binding vs Non-binding) ===")
+print(f"U statistic: {u_stat:.3f}")
+print(f"P-value: {p_value}")
+
+# === Save Descriptive Statistics ===
+desc_stats = f"=== Descriptive Statistics ===\n"
+desc_stats += f"Binding Site Residues:\n"
+desc_stats += f"  Mean: {merged['avg_s2calc_binding'].mean():.4f}\n"
+desc_stats += f"  Median: {merged['avg_s2calc_binding'].median():.4f}\n"
+desc_stats += f"  Std: {merged['avg_s2calc_binding'].std():.4f}\n"
+desc_stats += f"  Count: {len(merged['avg_s2calc_binding'])}\n"
+desc_stats += f"\nNon-binding Site Residues:\n"
+desc_stats += f"  Mean: {merged['avg_s2calc_nonbinding'].mean():.4f}\n"
+desc_stats += f"  Median: {merged['avg_s2calc_nonbinding'].median():.4f}\n"
+desc_stats += f"  Std: {merged['avg_s2calc_nonbinding'].std():.4f}\n"
+desc_stats += f"  Count: {len(merged['avg_s2calc_nonbinding'])}\n"
+
+with open(f"{output_path}/descriptive_statistics.txt", "w") as f:
+    f.write(desc_stats)
+
+print(f"\n=== Descriptive Statistics ===")
+print(f"Binding Site Residues:")
+print(f"  Mean: {merged['avg_s2calc_binding'].mean():.4f}")
+print(f"  Median: {merged['avg_s2calc_binding'].median():.4f}")
+print(f"  Std: {merged['avg_s2calc_binding'].std():.4f}")
+print(f"  Count: {len(merged['avg_s2calc_binding'])}")
+
+print(f"\nNon-binding Site Residues:")
+print(f"  Mean: {merged['avg_s2calc_nonbinding'].mean():.4f}")
+print(f"  Median: {merged['avg_s2calc_nonbinding'].median():.4f}")
+print(f"  Std: {merged['avg_s2calc_nonbinding'].std():.4f}")
+print(f"  Count: {len(merged['avg_s2calc_nonbinding'])}")
+
 # Melt for plotting
-melted = merged.melt(id_vars='pdb_id',
+melted = merged.melt(id_vars=['pdb_id', 'chain'],
                      value_vars=['avg_s2calc_binding', 'avg_s2calc_nonbinding'],
                      var_name='Residue Type', value_name='s2calc')
 melted['Residue Type'] = melted['Residue Type'].map({
