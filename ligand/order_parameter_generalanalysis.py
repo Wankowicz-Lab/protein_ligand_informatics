@@ -78,7 +78,6 @@ plt.savefig(f'{args.output}_residue_distribution_orderparams.png')
 
 # Create clustermap of residues by order parameters
 pivot_op = order_all_A.pivot_table(index='PDB', columns='resi', values='s2calc_diff').fillna(0)
-pivot_op = pivot_op.drop(columns=[150], errors='ignore')
 
 # Generate the clustermap
 plt.figure()
