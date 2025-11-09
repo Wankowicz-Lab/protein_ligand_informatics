@@ -3,8 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import glob
-from Bio.PDB import *
-from scipy import stats
 import argparse
 
 
