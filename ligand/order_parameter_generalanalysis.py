@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import glob
-from Bio.PDB import *
 from scipy import stats
 import argparse
 
@@ -192,10 +191,9 @@ if args.use_close_resi:
    
     plt.figure(figsize=(12, 8))
     sns.histplot(data=combined_OP, x='s2calc_diff', hue='Residue Proximity', multiple='stack', palette={'Binding Site Residues': 'blue', 'Distal Residues': 'green', 'All Residues': 'orange'}, bins=50)
-    plt.xlabel('s2calc Difference', fontsize=14)
-    plt.ylabel('Count', fontsize=14)
-    plt.title('Histogram of s2calc Differences by Residue Proximity', fontsize=16)
-    plt.legend(title='Residue Proximity', title_fontsize='13', fontsize='12')
+    plt.xlabel('Δ Order Parameter')
+    plt.ylabel('Count')
+    plt.legend(title='Residue Proximity')
     plt.tight_layout()
     plt.savefig(f'{args.output}_OP_histogram_close_far_all.png', dpi=300, bbox_inches='tight')
     plt.close()
@@ -205,7 +203,7 @@ if args.use_close_resi:
     sns.kdeplot(data=avg_distal_OP, x='s2calc_diff', label='Distal Residues', color='green', linewidth=8)
     sns.kdeplot(data=avg_OP, x='s2calc_diff', label='All', color='orange', linewidth=8)
     plt.legend(title='Residue Location')
-    plt.xlabel('Order Parameter Differences')
+    plt.xlabel('Δ Order Parameter')
     plt.ylabel('Density')
     plt.tight_layout()
     plt.savefig(f'{args.output}_OP_distribution_close_far.png', dpi=300, bbox_inches='tight')
