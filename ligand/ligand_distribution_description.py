@@ -3,20 +3,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Crippen, Lipinski
-
 import argparse
 
-# Set up argument parser
-parser = argparse.ArgumentParser(description='Generate data description figures from ligand affinity data')
-parser.add_argument('affinity_csv', type=str, help='Path to the affinity data CSV file. This must incuded PDB, occ or BDC, and smiles of all ligands')
-parser.add_argument('--BDC', action='store_true', help='Flag indicating whether to use BDC filtering or analysis')
-args = parser.parse_args()
-
-ligand_data = args.affinity_csv
-use_bdc = args.BDC
 
 # Set font and figure params
 plt.rcParams.update({
@@ -34,6 +24,15 @@ lineprops = {'color': 'k', 'linewidth': 2}
 boxplot_kwargs = dict({'boxprops': boxprops, 'medianprops': lineprops,
                        'whiskerprops': lineprops, 'capprops': lineprops,
                        'width': 0.75})
+
+# Set up argument parser
+parser = argparse.ArgumentParser(description='Generate data description figures from ligand affinity data')
+parser.add_argument('affinity_csv', type=str, help='Path to the affinity data CSV file. This must incuded PDB, occ or BDC, and smiles of all ligands')
+parser.add_argument('--BDC', action='store_true', help='Flag indicating whether to use BDC filtering or analysis')
+args = parser.parse_args()
+
+ligand_data = args.affinity_csv
+use_bdc = args.BDC
 
 # Function to calculate properties from SMILES
 def calculate_properties(smiles):
