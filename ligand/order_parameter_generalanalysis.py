@@ -7,11 +7,6 @@ from Bio.PDB import *
 from scipy import stats
 import argparse
 
-from sklearn.feature_selection import mutual_info_regression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics.pairwise import cosine_similarity
-from analysis_functions import *
 
 # Set font and figure params
 plt.rcParams.update({
@@ -31,7 +26,7 @@ boxplot_kwargs = dict({'boxprops': boxprops, 'medianprops': lineprops,
                        'width': 0.75})
 
 
-# Set up argument parser
+# Set up argument parser 
 parser = argparse.ArgumentParser(description="Data cleaning and general analysis for mac1 ensemble.")
 parser.add_argument('--mac1_affinity', type=str, default='/Users/stephaniewanko/Downloads/vanderbilt/mac1/mac1_affinity.csv', help='Path to mac1_affinity.csv')
 parser.add_argument('--apo_op', type=str, default='/Users/stephaniewanko/Downloads/vanderbilt/mac1/OP/7kqo_OP.out', help='Path to apo order parameter file')
