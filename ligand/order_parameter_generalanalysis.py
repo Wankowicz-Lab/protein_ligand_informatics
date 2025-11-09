@@ -67,7 +67,7 @@ if crystal_contacts:
 order_all_A = pd.merge(order_all_A, apo_op, on=['resi', 'chain'], how='left', suffixes=('', '_apo'))
 order_all_A['s2calc_diff'] =  order_all_A['s2calc'] - order_all_A['s2calc_apo']
 order_all_A['s2calc_diff'] = order_all_A['s2calc_diff']
-order_all_A.to_csv(f'{args.output}_order_all_A.csv', index=False)
+order_all_A.to_csv(f'{args.output}_order_param_diff.csv', index=False)
 
 plt.figure(figsize=(20, 6))
 sns.boxplot(x='resi', y='s2calc_diff', data=order_all_A, flierprops=dict(marker='o', color='gray', markersize=1))
